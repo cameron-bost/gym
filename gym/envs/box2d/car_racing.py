@@ -377,7 +377,7 @@ class CarRacing(gym.Env, EzPickle):
         #     WINDOW_H/4 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
         # self.transform.set_rotation(angle)
         self.transform.set_scale(2, 2)
-        self.transform.set_translation(WINDOW_W/2, WINDOW_H/2)
+        self.transform.set_translation(WINDOW_W/2 - scroll_x, WINDOW_H/2 - scroll_y)
         self.car.draw(self.viewer, mode!="state_pixels")
 
         arr = None
