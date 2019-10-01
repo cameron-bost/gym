@@ -371,12 +371,13 @@ class CarRacing(gym.Env, EzPickle):
         vel = self.car.hull.linearVelocity
         if np.linalg.norm(vel) > 0.5:
             angle = math.atan2(vel[0], vel[1])
-        self.transform.set_scale(zoom, zoom)
-        self.transform.set_translation(
-            WINDOW_W/2 - (scroll_x*zoom*math.cos(angle) - scroll_y*zoom*math.sin(angle)),
-            WINDOW_H/4 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
-        self.transform.set_rotation(angle)
-
+        # self.transform.set_scale(zoom, zoom)
+        # self.transform.set_translation(
+        #     WINDOW_W/2 - (scroll_x*zoom*math.cos(angle) - scroll_y*zoom*math.sin(angle)),
+        #     WINDOW_H/4 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
+        # self.transform.set_rotation(angle)
+        self.transform.set_scale(2, 2)
+        self.transform.set_translation(WINDOW_W/2, WINDOW_H/2)
         self.car.draw(self.viewer, mode!="state_pixels")
 
         arr = None
