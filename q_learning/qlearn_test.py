@@ -5,7 +5,7 @@ import calendar
 import time
 import os
 from os.path import exists
-
+from shutil import copyfile
 import numpy as np
 
 import gym
@@ -33,16 +33,16 @@ q_table = None
 
 
 # Exports the current contents of the Q-Table to disk and creates a backup of the previous contents.
-def export_qtable():
+def export_qtable(episode_num):
     global q_table
     q_file = 'q.txt'
     q_path = os.path.join(cur_path, q_file)
-    if exists(q_path):
-        backup_file = 'q_backup.txt'
-        backup_path = os.path.join(cur_path, backup_file)
+    backup_file = f'q_backups\\ep{episode_num}_q.txt'
+    backup_path = os.path.join(cur_path, backup_file)
+    if exists(backup_path):
         os.remove(backup_path)
-        os.rename(q_path, backup_path)
     np.savetxt(q_path, q_table)
+    copyfile(q_path, backup_path)
 
 
 # Attempts to load Q-Table data from file. If it fails, Q-Table is initialized with zeros.
@@ -120,14 +120,14 @@ def do_qlearn_episode(episode_num):
     np.savetxt(path+fname+"_cum.txt", cumulative_reward_list)
     # Export Q-Table contents to file
     print("Exporting Q-Table...")
-    export_qtable()
+    export_qtable(episode_num)
     print("Episode completed successfully")
 
 
 if __name__ == "__main__":
-    episode=0
+    start_episode=27
     # do_qlearn_episode(episode)
-    for episode in range(NUM_EPISODES):
+    for episode in range(start_episode, NUM_EPISODES):
         do_qlearn_episode(episode)
         do_terminate_qlearn = False
     
