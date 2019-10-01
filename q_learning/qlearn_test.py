@@ -17,8 +17,10 @@ do_terminate_qlearn = False
 env = gym.make('CarRacing-v0')
 
 # Environment properties
-action_space_size = np.prod(env.action_space.shape)
-observation_space_size = np.prod(env.observation_space.shape)
+observation_space_size = np.prod(env.observation_space.nvec)
+action_space_size = np.prod(env.action_space.nvec)
+NUM_EPISODES = 1000
+cur_path = os.path.dirname(__file__)
 
 # Q-Learning Parameters
 # TODO revise hyperparameters
@@ -34,10 +36,13 @@ q_table = None
 def export_qtable():
     global q_table
     q_file = 'q.txt'
-    if exists(q_file):
+    q_path = os.path.join(cur_path, q_file)
+    if exists(q_path):
         backup_file = 'q_backup.txt'
-        os.rename(q_file, backup_file)
-    np.savetxt(q_file, q_table)
+        backup_path = os.path.join(cur_path, backup_file)
+        os.remove(backup_path)
+        os.rename(q_path, backup_path)
+    np.savetxt(q_path, q_table)
 
 
 # Attempts to load Q-Table data from file. If it fails, Q-Table is initialized with zeros.
@@ -45,20 +50,23 @@ def export_qtable():
 def init_q_table():
     global q_table, env
     q_file = 'q.txt'
-    if exists(q_file):
+    q_path = os.path.join(cur_path, q_file)
+    if exists(q_path):
         try:
-            q_table = np.loadtxt(q_file, dtype=float)
+            q_table = np.loadtxt(q_path, dtype=float)
+            print("Using existing Q-Table...")
         except IOError as e:
             print("Failed to read from file:", e)
-            q_table = np.zeros([np.prod(env.observation_space.shape), np.prod(env.action_space.shape)])
+            q_table = np.zeros([observation_space_size, action_space_size])
     else:
-        q_table = np.zeros([np.prod(env.observation_space.shape), np.prod(env.action_space.shape)])
+        print("Creating new Q-Table...")
+        q_table=np.zeros([observation_space_size, action_space_size])
 
 
 # Performs one entire episode (aka epoch) of Q-Learning training
 # This method was inspired by an example Q-Learning algorithm located at:
 # https://towardsdatascience.com/reinforcement-learning-with-openai-d445c2c687d2
-def do_qlearn_episode():
+def do_qlearn_episode(episode_num):
     global do_terminate_qlearn
     print("Initializing Q-Table...")
     init_q_table()
@@ -71,22 +79,25 @@ def do_qlearn_episode():
     cumulative_reward_list = list()
     current_cumulative_reward = 0
 
-    print("Beginning training episode...")
+    print(f"Beginning training episode {episode_num}...")
     # Repeat until max iterations have passed or agent reaches terminal state
     while not do_terminate_qlearn and iteration_ctr <= MAX_ITER_PER_EPISODE:
         # Keep that UI train rolling
         env.render()
 
         # Choose action. We add artificial stochastic variance to Q-Table to encourage deviance from the Q-Table
-        exploration_motivator = np.random.randn(1, action_space_size)  # TODO investigate usefulness of: *(1./(i+1))
-        selected_action = np.argmax(q_table[current_state, :] + exploration_motivator)
-
+        exploration_motivator = np.random.randn(1, action_space_size)*(1./(episode_num+1))  # TODO investigate usefulness of: *(1./(i+1))
+        current_state_index = np.ravel_multi_index(current_state, env.observation_space.nvec)
+        selected_action_index = np.argmax(q_table[current_state_index] + exploration_motivator)
+        selected_action = np.unravel_index(selected_action_index, env.action_space.nvec)
+        
         # Perform action, update state
         next_state, reward, do_terminate_qlearn, info = env.step(selected_action)
 
         # Update Q-Table w/ standard Q-Learning rule
-        d_q = ALPHA * (reward + GAMMA * np.max(q_table[next_state, :]) - q_table[current_state, selected_action])
-        q_table[current_state, selected_action] += d_q
+        next_state_index = np.ravel_multi_index(next_state, env.observation_space.nvec)
+        d_q = ALPHA * (reward + GAMMA * np.max(q_table[next_state_index]) - q_table[current_state_index, selected_action_index])
+        q_table[current_state_index, selected_action_index] += d_q
 
         # Update agent state variables
         current_state = next_state
@@ -103,13 +114,21 @@ def do_qlearn_episode():
             do_terminate_qlearn = True
     # Export results to file
     print("Exporting results...")
-    fname = '%d_rewards' % calendar.timegm(time.gmtime())
-    np.savetxt(fname+".txt", current_reward_list)
-    np.savetxt(fname+"_cum.txt", cumulative_reward_list)
+    path = os.path.join(cur_path, "rewards\\")
+    fname = f'{calendar.timegm(time.gmtime())}_ep{episode_num}_rewards'
+    np.savetxt(path+fname+".txt", current_reward_list)
+    np.savetxt(path+fname+"_cum.txt", cumulative_reward_list)
     # Export Q-Table contents to file
     print("Exporting Q-Table...")
     export_qtable()
     print("Episode completed successfully")
 
 
-do_qlearn_episode()
+if __name__ == "__main__":
+    episode=0
+    # do_qlearn_episode(episode)
+    for episode in range(NUM_EPISODES):
+        do_qlearn_episode(episode)
+        do_terminate_qlearn = False
+    
+

@@ -39,3 +39,6 @@ tutorial/*.html
 vizdoom.ini
 
 /.vscode
+
+#Qlearning Log Data
+/q_learning/rewards
