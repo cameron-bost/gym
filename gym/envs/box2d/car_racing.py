@@ -42,6 +42,10 @@ from pyglet import gl
 DISTANCE_INTERVALS = 6
 SPEED_INTERVALS = 10  # Number of intervals to discretize speed state into
 
+STEER_ACTION = {0:0.0, 1:-1.0, 2:1.0}
+GAS_ACTION = {0:0.0, 1:1.0}
+BRAKE_ACTION = {0: 0.0, 1: 0.8}  # set 1.0 for wheels to block to zero rotation
+
 STATE_W = 96   # less than Atari 160x192
 STATE_H = 96
 VIDEO_W = 600
@@ -126,8 +130,23 @@ class CarRacing(gym.Env, EzPickle):
                 shape = polygonShape(vertices=
                     [(0, 0),(1, 0),(1, -1),(0, -1)]))
 
-        self.action_space = spaces.Box( np.array([-1,0,0]), np.array([+1,+1,+1]), dtype=np.float32)  # steer, gas, brake
-        self.observation_space = spaces.Box(low=0, high=255, shape=(STATE_H, STATE_W, 3), dtype=np.uint8)
+        """
+        Action Space:
+        1) Steer: Discrete 3  - NOOP[0], Left[1], Right[2] - params: min: 0, max: 2
+        2) Gas: Discrete 2 - NOOP[0], Go[1] - params: min: 0, max: 1
+        3) Brake: Discrete 2  - NOOP[0], Brake[1] - params: min: 0, max: 1
+
+        Observation Space:
+        1) Left distance: DISTANCE_INTERVALS + 1 discrete distances
+        2) Right distance: DISTANCE_INTERVALS + 1 discrete distances
+        3) Speed: SPEED_INTERVALS + 1 discrete speeds
+        """
+
+        self.action_space = spaces.MultiDiscrete([3, 2, 2])
+        self.observation_space = spaces.MultiDiscrete(
+            [DISTANCE_INTERVALS + 1,
+             DISTANCE_INTERVALS + 1,
+             SPEED_INTERVALS + 1])
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -315,23 +334,26 @@ class CarRacing(gym.Env, EzPickle):
 
     def step(self, action):
         if action is not None:
-            self.car.steer(-action[0])
-            self.car.gas(action[1])
-            self.car.brake(action[2])
+            self.car.steer(-STEER_ACTION[action[0]])
+            self.car.gas(GAS_ACTION[action[1]])
+            self.car.brake(BRAKE_ACTION[action[2]])
 
         self.car.step(1.0/FPS)
         self.world.Step(1.0/FPS, 6*30, 2*30)
         self.t += 1.0/FPS
 
         min_left_distance, min_right_distance = self.get_min_distances()
-        state_wheel_distances = (min(DISTANCE_INTERVALS, int(min_left_distance)), min(DISTANCE_INTERVALS, int(min_right_distance)))
+        wheel_distance_states = (min(DISTANCE_INTERVALS, int(min_left_distance)),
+                                min(DISTANCE_INTERVALS, int(min_right_distance)))
 
         speed = self.car.hull.linearVelocity.length
         # ceil division, +1 to keep between [0,SPEED_INTERVALS]
         speed_state = int(-(-speed // (SPEED_INTERVALS + 1)))
 
-        self.state = self.render("state_pixels")
-
+        self.state = (wheel_distance_states[0],
+                      wheel_distance_states[1],
+                      speed_state)
+                      
         step_reward = 0
         done = False
         if action is not None: # First step without action, called from reset()
@@ -501,13 +523,13 @@ if __name__=="__main__":
     def key_press(k, mod):
         global restart
         if k==0xff0d: restart = True
-        if k==key.LEFT:  a[0] = -1.0
-        if k==key.RIGHT: a[0] = +1.0
-        if k==key.UP:    a[1] = +1.0
-        if k==key.DOWN:  a[2] = +0.8   # set 1.0 for wheels to block to zero rotation
+        if k==key.LEFT:  a[0] = 1
+        if k==key.RIGHT: a[0] = 2
+        if k==key.UP:    a[1] = 1
+        if k==key.DOWN:  a[2] = 1
     def key_release(k, mod):
-        if k==key.LEFT  and a[0]==-1.0: a[0] = 0
-        if k==key.RIGHT and a[0]==+1.0: a[0] = 0
+        if k==key.LEFT  and a[0]==1: a[0] = 0
+        if k==key.RIGHT and a[0]==2: a[0] = 0
         if k==key.UP:    a[1] = 0
         if k==key.DOWN:  a[2] = 0
     env = CarRacing()
