@@ -40,7 +40,7 @@ from pyglet import gl
 # Created by Oleg Klimov. Licensed on the same terms as the rest of OpenAI Gym.
 
 DISTANCE_INTERVALS = 6
-
+SPEED_INTERVALS = 10  # Number of intervals to discretize speed state into
 
 STATE_W = 96   # less than Atari 160x192
 STATE_H = 96
@@ -325,6 +325,11 @@ class CarRacing(gym.Env, EzPickle):
 
         min_left_distance, min_right_distance = self.get_min_distances()
         state_wheel_distances = (min(DISTANCE_INTERVALS, int(min_left_distance)), min(DISTANCE_INTERVALS, int(min_right_distance)))
+
+        speed = self.car.hull.linearVelocity.length
+        # ceil division, +1 to keep between [0,SPEED_INTERVALS]
+        speed_state = int(-(-speed // (SPEED_INTERVALS + 1)))
+
         self.state = self.render("state_pixels")
 
         step_reward = 0
