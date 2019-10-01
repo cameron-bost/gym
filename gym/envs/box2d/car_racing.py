@@ -39,8 +39,8 @@ from pyglet import gl
 #
 # Created by Oleg Klimov. Licensed on the same terms as the rest of OpenAI Gym.
 
-SPEED_INTERVALS = 10 # Number of intervals to discretize speed state into
-
+DISTANCE_INTERVALS = 6
+SPEED_INTERVALS = 10  # Number of intervals to discretize speed state into
 
 STATE_W = 96   # less than Atari 160x192
 STATE_H = 96
@@ -323,9 +323,12 @@ class CarRacing(gym.Env, EzPickle):
         self.world.Step(1.0/FPS, 6*30, 2*30)
         self.t += 1.0/FPS
 
+        min_left_distance, min_right_distance = self.get_min_distances()
+        state_wheel_distances = (min(DISTANCE_INTERVALS, int(min_left_distance)), min(DISTANCE_INTERVALS, int(min_right_distance)))
+
         speed = self.car.hull.linearVelocity.length
         # ceil division, +1 to keep between [0,SPEED_INTERVALS]
-        speed_state = int(-(-speed // (SPEED_INTERVALS+1)))
+        speed_state = int(-(-speed // (SPEED_INTERVALS + 1)))
 
         self.state = self.render("state_pixels")
 
@@ -475,6 +478,21 @@ class CarRacing(gym.Env, EzPickle):
         self.score_label.text = "%04i" % self.reward
         self.score_label.draw()
 
+    def get_min_distances(self):
+        # Retrieves the distance to the nearest track tile centroid
+        wheels = self.car.wheels
+        (front_left_wheel, front_right_wheel) = (wheels[0].position, wheels[1].position)
+        min_left_distance = 9999
+        min_right_distance = 9999
+        for road_tile in self.road:
+            road_tile_position = road_tile.fixtures[0].shape.centroid
+            t_distance = math.sqrt(abs(road_tile_position.x - front_left_wheel.x) ** 2 + abs(road_tile_position.y - front_left_wheel.y) ** 2)
+            if t_distance < min_left_distance:
+                min_left_distance = t_distance
+            t_distance = math.sqrt(abs(road_tile_position.x - front_right_wheel.x) ** 2 + abs(road_tile_position.y - front_right_wheel.y) ** 2)
+            if t_distance < min_right_distance:
+                min_right_distance = t_distance
+        return min_left_distance, min_right_distance
 
 if __name__=="__main__":
     from pyglet.window import key
