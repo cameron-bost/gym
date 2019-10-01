@@ -7,8 +7,8 @@ import os
 from os.path import exists
 from shutil import copyfile
 import numpy as np
-
 import gym
+from random import choices
 
 # Flag for indicating when program should terminate
 do_terminate_qlearn = False
@@ -19,14 +19,18 @@ env = gym.make('CarRacing-v0')
 # Environment properties
 observation_space_size = np.prod(env.observation_space.nvec)
 action_space_size = np.prod(env.action_space.nvec)
-NUM_EPISODES = 1000
 cur_path = os.path.dirname(__file__)
 
 # Q-Learning Parameters
 # TODO revise hyperparameters
 ALPHA = 0.01
 GAMMA = .9
+NUM_EPISODES = 5000
 MAX_ITER_PER_EPISODE = 1000
+MAX_EXPLORE_RATE=0.5
+EXPLORE_DECAY_RATE=0.01
+MIN_EXPLORE_RATE=0.01
+
 
 # Q-Table, a matrix of actions x states that tracks previous reward values for all visited states
 q_table = None
@@ -79,6 +83,9 @@ def do_qlearn_episode(episode_num):
     cumulative_reward_list = list()
     current_cumulative_reward = 0
 
+#Get random exploration chance (chance to deviate from reward in different action)
+    exploration_rate = max(MAX_EXPLORE_RATE*(1-EXPLORE_DECAY_RATE)**episode_num, MIN_EXPLORE_RATE) #Exponential decay of exploration
+
     print(f"Beginning training episode {episode_num}...")
     # Repeat until max iterations have passed or agent reaches terminal state
     while not do_terminate_qlearn and iteration_ctr <= MAX_ITER_PER_EPISODE:
@@ -86,9 +93,21 @@ def do_qlearn_episode(episode_num):
         env.render()
 
         # Choose action. We add artificial stochastic variance to Q-Table to encourage deviance from the Q-Table
-        exploration_motivator = np.random.randn(1, action_space_size)*(1./(episode_num+1))  # TODO investigate usefulness of: *(1./(i+1))
+        # exploration_motivator = np.random.randn(1, action_space_size)*(1./(episode_num+1))  # TODO investigate usefulness of: *(1./(i+1))
+        
+        # Choose action with highest reward
         current_state_index = np.ravel_multi_index(current_state, env.observation_space.nvec)
-        selected_action_index = np.argmax(q_table[current_state_index] + exploration_motivator)
+        best_action_index = np.argmax(q_table[current_state_index])
+        
+        # Generate list from [0, ..., action_space_size)
+        pop = [i for i in range(action_space_size)]
+        # Get weights for non-best-valued action
+        individual_weight = exploration_rate/(action_space_size-1)
+        # Generate list of weights
+        weights = [individual_weight if a != best_action_index
+                   else (1-exploration_rate) for a in pop]
+        selected_action_index = choices(pop, weights)[0]
+        
         selected_action = np.unravel_index(selected_action_index, env.action_space.nvec)
         
         # Perform action, update state
@@ -125,7 +144,7 @@ def do_qlearn_episode(episode_num):
 
 
 if __name__ == "__main__":
-    start_episode=27
+    start_episode=0
     # do_qlearn_episode(episode)
     for episode in range(start_episode, NUM_EPISODES):
         do_qlearn_episode(episode)
