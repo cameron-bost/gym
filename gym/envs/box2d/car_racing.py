@@ -325,7 +325,7 @@ class CarRacing(gym.Env, EzPickle):
 
         speed = self.car.hull.linearVelocity.length
         # ceil division, +1 to keep between [0,SPEED_INTERVALS]
-        speed_state = -(-speed // (SPEED_INTERVALS+1))
+        speed_state = int(-(-speed // (SPEED_INTERVALS+1)))
 
         self.state = self.render("state_pixels")
 
