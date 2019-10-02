@@ -589,26 +589,25 @@ class CarRacing(gym.Env, EzPickle):
         # Add them to  be drawn later
         self.wall_segments = []
         for wall_segment in wall_segments:
-            path = [(wall_segment[0][0], wall_segment[0][1]), (wall_segment[1][0], wall_segment[1][1]),
-                    (wall_segment[1][0]+.1, wall_segment[1][1]+.1), (wall_segment[0][0]+.1, wall_segment[0][1]+.1)]
+            path = [(wall_segment[0][0], wall_segment[0][1]), (wall_segment[1][0], wall_segment[1][1])]
             self.wall_segments.append(path)
 
         
         def intersection(seg1, seg2):
-            # Based on wikipedia https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
+            # Based on this formula http://www-cs.ccny.cuny.edu/~wolberg/capstone/intersection/Intersection%20point%20of%20two%20lines.html
             x1, y1 = seg1[0]
             x2, y2 = seg1[1]
             x3, y3 = seg2[0]
             x4, y4 = seg2[1]
 
-            denom = (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4)
+            denom = (x2-x1)*(y4-y3)-(x4-x3)*(y2-y1)
             if math.isclose(denom, 0):
                 # Denominator close to 0 means lines parallel
                 return None
 
-            t_num = (x1-x3)*(y3-y4)-(y1-y3)*(x3-x4)
+            t_num = (x4-x3)*(y1-y3)-(y4-y3)*(x1-x3)
             t = t_num/denom        
-            u_num = (x1-x2)*(y1-y3)-(y1-y2)*(x3-x4)
+            u_num = (x2-x1)*(y1-y3)-(x1-x3)*(y2-y1)
             u = u_num/denom
 
             if t >= 0.0 and t <= 1.0 and u >= 0.0 and u <= 1.0:
