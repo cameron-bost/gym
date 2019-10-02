@@ -44,3 +44,4 @@ vizdoom.ini
 /q_learning/rewards
 /q_learning/q_backups
 *_q.txt
+*_q.gz

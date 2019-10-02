@@ -125,7 +125,7 @@ register(
 register(
     id='CarRacing-v0',
     entry_point='gym.envs.box2d:CarRacing',
-    max_episode_steps=1000,
+    max_episode_steps=999999,
     reward_threshold=900,
 )
 
