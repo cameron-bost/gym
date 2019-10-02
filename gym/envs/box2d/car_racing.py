@@ -47,6 +47,8 @@ DISTANCE_INTERVALS = 6
 SPEED_INTERVALS = 10  # Number of intervals to discretize speed state into
 MAX_SPEED = 100
 
+STEER_INTERVALS = 3
+
 STEER_ACTION = {0:0.0, 1:-1.0, 2:1.0}
 GAS_ACTION = {0:0.0, 1:1.0}
 BRAKE_ACTION = {0: 0.0, 1: 0.8}  # set 1.0 for wheels to block to zero rotation
@@ -142,19 +144,21 @@ class CarRacing(gym.Env, EzPickle):
         3) Brake: Discrete 2  - NOOP[0], Brake[1] - params: min: 0, max: 1
 
         Observation Space:
-        1) Left distance: DISTANCE_INTERVALS + 1 discrete distances
-        2) Right distance: DISTANCE_INTERVALS + 1 discrete distances
-        3) Speed: SPEED_INTERVALS + 1 discrete speeds
-        4) Sensors: RAY_CAST_INTERVALS * NUM_SENSORS
+        1) Speed: SPEED_INTERVALS + 1 discrete speeds
+        2) Sensors: RAY_CAST_INTERVALS * NUM_SENSORS
+        3) Wheel off or not ( for each wheel): 2
+        4) Steering: STEER_INTERVALS
+
         """
 
         self.action_space = spaces.MultiDiscrete([3, 2, 2])
         self.observation_space = spaces.MultiDiscrete(
             # [DISTANCE_INTERVALS + 1,
             #  DISTANCE_INTERVALS + 1,
-            [SPEED_INTERVALS + 1] +
-            [RAY_CAST_INTERVALS]*NUM_SENSORS +
-            [2, 2])
+            [SPEED_INTERVALS + 1]
+            + [RAY_CAST_INTERVALS]*NUM_SENSORS
+            # + [2, 2]
+            + [STEER_INTERVALS])
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -360,27 +364,50 @@ class CarRacing(gym.Env, EzPickle):
         # ceil division, +1 to keep between [0,SPEED_INTERVALS]
         speed_state = int(0 if math.isclose(speed,0) else 1 if speed < 10.0 else math.ceil(speed // (MAX_SPEED/(SPEED_INTERVALS + 1))))
         
-        # Get raycast distances
-        raycast_dist = self.get_raycast_points(close_tiles)
-        raycast_dist_state = [int(dist // (RAY_CAST_DISTANCE/RAY_CAST_INTERVALS)) for dist in raycast_dist]
+        if action is not None:
+            # Get raycast distances
+            raycast_dist = self.get_raycast_points(close_tiles)
+            raycast_dist_state = [int(dist // (RAY_CAST_DISTANCE/RAY_CAST_INTERVALS)) for dist in raycast_dist]
+        else:
+            raycast_dist_state = [RAY_CAST_INTERVALS-1 for i in range(RAY_CAST_INTERVALS)]
+        # print(raycast_dist)
 
         left_wheel_off = 1 if min_left_distance > DISTANCE_INTERVALS else 0
         right_wheel_off = 1 if min_right_distance > DISTANCE_INTERVALS else 0
         wheel_on_off_states = (left_wheel_off, right_wheel_off)
 
-        self.state = (speed_state,) + tuple(raycast_dist_state) + wheel_on_off_states
+        # Steer interval states
+        # Get wheel joint
+        joint = self.car.wheels[0].joint
+        joint_angle = np.clip(joint.angle, joint.lowerLimit, joint.upperLimit)
+        joint_range = joint.upperLimit - joint.lowerLimit
+        steer_state = min(int((joint_angle+joint_range/2) // (joint_range/(STEER_INTERVALS))), STEER_INTERVALS-1)
+
+        self.state = (speed_state,) + tuple(raycast_dist_state) + (steer_state,)
 
         step_reward = 0
         done = False
         
 
-
-
         if action is not None: # First step without action, called from reset()
          
-            # Negative reward based on time, inversely proportional to speed
-            step_reward = -1/(speed_state + 1)
+
+        if action is not None: # First step without action, called from reset()
             
+            # negative reward for steering away from away raypoint
+            # Get max angle (or average of them if multiple)
+            max_angles = []
+            max_dist = max(raycast_dist)
+            for index, ray in enumerate(raycast_dist):
+                if ray == max_dist:
+                    max_angles.append(self.raycast_angles[index])
+            avg_angle = sum(max_angles)/len(max_angles)
+            # Get steering angle
+            abs_steer = joint_angle + self.car.hull.angle + math.pi/2
+            # Get difference between them, and score based on the difference
+            angle_diff = abs(avg_angle - abs_steer)
+            step_reward -= angle_diff/10
+
             # Increase the negative time reward by each dist over limit. 
             cnt = 0
             for dist in min_distances:
@@ -596,6 +623,7 @@ class CarRacing(gym.Env, EzPickle):
         raycasts = [((self.car.hull.position.x, self.car.hull.position.y), endpoint) for endpoint in endpts]
 
         self.raycasts = raycasts
+        self.raycast_angles = angles
 
         # Get wall segments
         wall_segments = []
