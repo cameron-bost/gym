@@ -32,9 +32,11 @@ VIEW_INTERVAL = 100
 
 # Q-Learning Parameters
 # TODO revise hyperparameters
-ALPHA = 0.1
-GAMMA = .85
-NUM_EPISODES = 500000
+ALPHA = 0.15
+GAMMA_INIT = 0.4
+GAMMA_MAX = 0.85
+GAMMA_MAX_EPISODE = 5000
+NUM_EPISODES = 50000
 EPISODE_ITERATION_INIT = 100
 EPISODE_ITERATION_INCREMENT = 100
 EPISODE_ITERATION_INCREMENT_INTERVAL = 250
@@ -92,7 +94,7 @@ def init_q_table():
 # Performs one entire episode (aka epoch) of Q-Learning training
 # This method was inspired by an example Q-Learning algorithm located at:
 # https://towardsdatascience.com/reinforcement-learning-with-openai-d445c2c687d2
-def do_qlearn_episode(episode_num, policy, learning_method, max_iterations):
+def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamma):
     global do_terminate_qlearn
     # Initial state is determined by environment
     current_state = env.reset()
@@ -121,7 +123,7 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations):
 
         # Update Q-Table w/ standard Q-Learning rule
         next_state_index = np.ravel_multi_index(next_state, env.observation_space.nvec)
-        d_q = learning_method(reward, current_state_index, selected_action_index, next_state_index)
+        d_q = learning_method(reward, current_state_index, selected_action_index, next_state_index, gamma)
         q_table[current_state_index, selected_action_index] += d_q
 
         # Update agent state variables
@@ -140,13 +142,13 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations):
     print(f"Episode {episode_num} completed. Average score: {current_average_reward}")
     return current_average_reward, cumulative_reward_list
 
-def expected_sarsa(reward, current_state_index, selected_action_index, next_state_index):
+def expected_sarsa(reward, current_state_index, selected_action_index, next_state_index, gamma):
     action_list = q_table[next_state_index]
     weights = exponential_weights(next_state_index)
     expected_q = [weight*action for weight, action in zip(weights,action_list)]
     epected_val = sum(expected_q)
     d_q = ALPHA * (reward 
-                   + GAMMA * epected_val
+                   + gamma * epected_val
                    - q_table[current_state_index, selected_action_index])
     return d_q
 
@@ -182,16 +184,21 @@ if __name__ == "__main__":
     # do_qlearn_episode(start_episode)
 
     max_iterations = EPISODE_ITERATION_INIT + (start_episode // EPISODE_ITERATION_INCREMENT_INTERVAL) * EPISODE_ITERATION_INCREMENT
+    gamma_incr = (GAMMA_MAX-GAMMA_INIT)/GAMMA_MAX_EPISODE # From wiki, start low then end high
+    gamma = min(GAMMA_MAX, GAMMA_INIT + gamma_incr * start_episode)
     episode_reward_list = []
+    cumulative_reward_list = None
     for episode in range(start_episode, NUM_EPISODES):
         if episode % EPISODE_ITERATION_INCREMENT_INTERVAL == 0:
             max_iterations += EPISODE_ITERATION_INCREMENT
         max_iterations = min(max_iterations, MAX_ITER_PER_EPISODE) # Cap num iterations
         # Exploration rate; exponential decay
         exploration_rate = min(MAX_EXPLORE_RATE*(1-EXPLORE_DECAY_RATE)**episode, MIN_EXPLORE_RATE)
+        gamma = min(GAMMA_MAX, gamma + gamma_incr)
 
-        current_average_reward, cumulative_reward_list = do_qlearn_episode(
-            episode, exponential_explore, expected_sarsa, max_iterations)
+        current_average_reward = do_qlearn_episode(
+            episode, exponential_explore, expected_sarsa, max_iterations, gamma)
+        do_terminate_qlearn = False
         episode_reward_list.append(current_average_reward)
         if export_qtable(episode, episode_reward_list, cumulative_reward_list):
             episode_reward_list = []
