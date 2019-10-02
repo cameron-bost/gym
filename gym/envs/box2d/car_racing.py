@@ -634,6 +634,8 @@ class CarRacing(gym.Env, EzPickle):
         # Get wall segments
         wall_segments = []
         for tile in tiles:
+            if len(tile) < 4:
+                continue
             dist1 = math.sqrt((tile[0][0] - tile[3][0])**2 +
                         (tile[0][1] - tile[3][1])**2)
             dist2 = math.sqrt((tile[0][0] - tile[1][0])**2 +
