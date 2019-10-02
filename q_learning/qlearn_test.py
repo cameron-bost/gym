@@ -10,6 +10,11 @@ import numpy as np
 import gym
 from random import choices
 
+EXPERIMENT = "sensors"
+cur_path = os.path.dirname(__file__)
+q_file = f'{EXPERIMENT}_q.txt'
+q_path = os.path.join(cur_path, q_file)
+
 # Flag for indicating when program should terminate
 do_terminate_qlearn = False
 
@@ -19,7 +24,6 @@ env = gym.make('CarRacing-v0')
 # Environment properties
 observation_space_size = np.prod(env.observation_space.nvec)
 action_space_size = np.prod(env.action_space.nvec)
-cur_path = os.path.dirname(__file__)
 
 # Q-Learning Parameters
 # TODO revise hyperparameters
@@ -38,12 +42,10 @@ q_table = None
 
 # Exports the current contents of the Q-Table to disk and creates a backup of the previous contents.
 def export_qtable(episode_num):
-    global q_table
-    q_file = 'q.txt'
-    q_path = os.path.join(cur_path, q_file)
-    backup_file = f'q_backups\\ep{episode_num}_q.txt'
+    global q_table, cur_path, q_path
+    backup_file = f'q_backups\\{EXPERIMENT}_ep{episode_num}_q.txt'
     backup_path = os.path.join(cur_path, backup_file)
-    if exists(backup_path):
+    if exists(backup_path): 
         os.remove(backup_path)
     np.savetxt(q_path, q_table)
     copyfile(q_path, backup_path)
@@ -52,9 +54,7 @@ def export_qtable(episode_num):
 # Attempts to load Q-Table data from file. If it fails, Q-Table is initialized with zeros.
 # TODO Consider not using zeros for the initial values
 def init_q_table():
-    global q_table, env
-    q_file = 'q.txt'
-    q_path = os.path.join(cur_path, q_file)
+    global q_table, env, cur_path, q_path
     if exists(q_path):
         try:
             q_table = np.loadtxt(q_path, dtype=float)
@@ -134,7 +134,7 @@ def do_qlearn_episode(episode_num):
     # Export results to file
     print("Exporting results...")
     path = os.path.join(cur_path, "rewards\\")
-    fname = f'{calendar.timegm(time.gmtime())}_ep{episode_num}_rewards'
+    fname = f'{EXPERIMENT}_ep{episode_num}_rewards'
     np.savetxt(path+fname+".txt", current_reward_list)
     np.savetxt(path+fname+"_cum.txt", cumulative_reward_list)
     # Export Q-Table contents to file
@@ -145,9 +145,10 @@ def do_qlearn_episode(episode_num):
 
 if __name__ == "__main__":
     start_episode=0
-    # do_qlearn_episode(episode)
-    for episode in range(start_episode, NUM_EPISODES):
-        do_qlearn_episode(episode)
-        do_terminate_qlearn = False
+    do_qlearn_episode(start_episode)
+    
+    # for episode in range(start_episode, NUM_EPISODES):
+    #     do_qlearn_episode(episode)
+    #     do_terminate_qlearn = False
     
 
