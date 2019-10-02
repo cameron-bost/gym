@@ -45,6 +45,7 @@ RAY_CAST_INTERVALS = 5
 
 DISTANCE_INTERVALS = 6
 SPEED_INTERVALS = 10  # Number of intervals to discretize speed state into
+MAX_SPEED = 100
 
 STEER_ACTION = {0:0.0, 1:-1.0, 2:1.0}
 GAS_ACTION = {0:0.0, 1:1.0}
@@ -105,7 +106,7 @@ class FrictionDetector(contactListener):
             # print tile.road_friction, "ADD", len(obj.tiles)
             if not tile.road_visited:
                 tile.road_visited = True
-                self.env.reward += 1000.0/len(self.env.track)
+                self.env.reward += 100.0/len(self.env.track)
                 self.env.tile_visited_count += 1
         else:
             obj.tiles.remove(tile)
@@ -152,7 +153,8 @@ class CarRacing(gym.Env, EzPickle):
             # [DISTANCE_INTERVALS + 1,
             #  DISTANCE_INTERVALS + 1,
             [SPEED_INTERVALS + 1] +
-            [RAY_CAST_INTERVALS]*NUM_SENSORS)
+            [RAY_CAST_INTERVALS]*NUM_SENSORS +
+            [2, 2])
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -350,29 +352,52 @@ class CarRacing(gym.Env, EzPickle):
 
         # Get distance to track tiles
         min_left_distance, min_right_distance, close_tiles = self.get_min_distances()
+        min_distances = (min_left_distance, min_right_distance)
         wheel_distance_states = (min(DISTANCE_INTERVALS, int(min_left_distance)),
                                 min(DISTANCE_INTERVALS, int(min_right_distance)))
 
-        speed = self.car.hull.linearVelocity.length
+        speed = min(self.car.hull.linearVelocity.length, MAX_SPEED)
         # ceil division, +1 to keep between [0,SPEED_INTERVALS]
-        speed_state = int(-(-speed // (SPEED_INTERVALS + 1)))
-
+        speed_state = int(0 if math.isclose(speed,0) else 1 if speed < 10.0 else math.ceil(speed // (MAX_SPEED/(SPEED_INTERVALS + 1))))
+        
         # Get raycast distances
         raycast_dist_state = self.get_raycast_points(close_tiles)
 
-        # self.state = (wheel_distance_states[0],
-        #               wheel_distance_states[1],
-        #               speed_state) + tuple(raycast_dist_state)
-        
-        self.state = (speed_state,) + tuple(raycast_dist_state)
+        left_wheel_off = 1 if min_left_distance > DISTANCE_INTERVALS else 0
+        right_wheel_off = 1 if min_right_distance > DISTANCE_INTERVALS else 0
+        wheel_on_off_states = (left_wheel_off, right_wheel_off)
+
+        self.state = (speed_state,) + tuple(raycast_dist_state) + wheel_on_off_states
+
         step_reward = 0
         done = False
+        
+
+
+
         if action is not None: # First step without action, called from reset()
-            self.reward -= 0.1
-            self.reward -= sum([0.01*i for i in wheel_distance_states])
+         
+            # Negative reward based on time, inversely proportional to speed
+            step_reward = -1/(speed_state + 1)
+            
+            # Increase the negative time reward by each dist over limit. 
+            cnt = 0
+            for dist in min_distances:
+                if dist > DISTANCE_INTERVALS:
+                    step_reward *= 1.25
+                    cnt += 1
+            if cnt == len(min_distances):
+                done = True
+                step_reward -= 20
+
+            # Negative reward based on distance to track, increased by speed
+            step_reward -= sum([0.01*i*speed_state for i in min_distances])
+
+
             # We actually don't want to count fuel spent, we want car to be faster.
             # self.reward -=  10 * self.car.fuel_spent / ENGINE_POWER
             self.car.fuel_spent = 0.0
+            self.reward += step_reward
             step_reward = self.reward - self.prev_reward
             self.prev_reward = self.reward
             if self.tile_visited_count==len(self.track):
