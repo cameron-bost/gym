@@ -39,6 +39,10 @@ from pyglet import gl
 #
 # Created by Oleg Klimov. Licensed on the same terms as the rest of OpenAI Gym.
 
+RAY_CAST_DISTANCE = 20
+NUM_SENSORS = 5
+RAY_CAST_INTERVALS = 5
+
 DISTANCE_INTERVALS = 6
 SPEED_INTERVALS = 10  # Number of intervals to discretize speed state into
 
@@ -140,13 +144,15 @@ class CarRacing(gym.Env, EzPickle):
         1) Left distance: DISTANCE_INTERVALS + 1 discrete distances
         2) Right distance: DISTANCE_INTERVALS + 1 discrete distances
         3) Speed: SPEED_INTERVALS + 1 discrete speeds
+        4) Sensors: RAY_CAST_INTERVALS * NUM_SENSORS
         """
 
         self.action_space = spaces.MultiDiscrete([3, 2, 2])
         self.observation_space = spaces.MultiDiscrete(
-            [DISTANCE_INTERVALS + 1,
-             DISTANCE_INTERVALS + 1,
-             SPEED_INTERVALS + 1])
+            # [DISTANCE_INTERVALS + 1,
+            #  DISTANCE_INTERVALS + 1,
+            [SPEED_INTERVALS + 1] +
+            [RAY_CAST_INTERVALS]*NUM_SENSORS)
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -342,7 +348,8 @@ class CarRacing(gym.Env, EzPickle):
         self.world.Step(1.0/FPS, 6*30, 2*30)
         self.t += 1.0/FPS
 
-        min_left_distance, min_right_distance = self.get_min_distances()
+        # Get distance to track tiles
+        min_left_distance, min_right_distance, close_tiles = self.get_min_distances()
         wheel_distance_states = (min(DISTANCE_INTERVALS, int(min_left_distance)),
                                 min(DISTANCE_INTERVALS, int(min_right_distance)))
 
@@ -350,14 +357,19 @@ class CarRacing(gym.Env, EzPickle):
         # ceil division, +1 to keep between [0,SPEED_INTERVALS]
         speed_state = int(-(-speed // (SPEED_INTERVALS + 1)))
 
-        self.state = (wheel_distance_states[0],
-                      wheel_distance_states[1],
-                      speed_state)
-                      
+        # Get raycast distances
+        raycast_dist_state = self.get_raycast_points(close_tiles)
+
+        # self.state = (wheel_distance_states[0],
+        #               wheel_distance_states[1],
+        #               speed_state) + tuple(raycast_dist_state)
+        
+        self.state = (speed_state,) + tuple(raycast_dist_state)
         step_reward = 0
         done = False
         if action is not None: # First step without action, called from reset()
             self.reward -= 0.1
+            self.reward -= sum([0.01*i for i in wheel_distance_states])
             # We actually don't want to count fuel spent, we want car to be faster.
             # self.reward -=  10 * self.car.fuel_spent / ENGINE_POWER
             self.car.fuel_spent = 0.0
@@ -393,13 +405,13 @@ class CarRacing(gym.Env, EzPickle):
         vel = self.car.hull.linearVelocity
         if np.linalg.norm(vel) > 0.5:
             angle = math.atan2(vel[0], vel[1])
-        # self.transform.set_scale(zoom, zoom)
-        # self.transform.set_translation(
-        #     WINDOW_W/2 - (scroll_x*zoom*math.cos(angle) - scroll_y*zoom*math.sin(angle)),
-        #     WINDOW_H/4 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
-        # self.transform.set_rotation(angle)
-        self.transform.set_scale(2, 2)
-        self.transform.set_translation(WINDOW_W/2 - scroll_x, WINDOW_H/2 - scroll_y)
+        self.transform.set_scale(zoom, zoom)
+        self.transform.set_translation(
+            WINDOW_W/2 - (scroll_x*zoom*math.cos(angle) - scroll_y*zoom*math.sin(angle)),
+            WINDOW_H/4 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
+        self.transform.set_rotation(angle)
+        # self.transform.set_scale(2, 2)
+        # self.transform.set_translation(WINDOW_W/2 - scroll_x, WINDOW_H/2 - scroll_y)
         self.car.draw(self.viewer, mode!="state_pixels")
 
         arr = None
@@ -430,6 +442,8 @@ class CarRacing(gym.Env, EzPickle):
         self.viewer.onetime_geoms = []
         t.disable()
         self.render_indicators(WINDOW_W, WINDOW_H)
+        self.render_raycasts()
+        self.render_wall_segments()
 
         if mode == 'human':
             win.flip()
@@ -501,21 +515,119 @@ class CarRacing(gym.Env, EzPickle):
         self.score_label.text = "%04i" % self.reward
         self.score_label.draw()
 
+    def render_raycasts(self):
+        for raycast in self.raycasts:
+            path = [(raycast[0][0], raycast[0][1]), (raycast[1][0], raycast[1][1]), (raycast[1][0]+.1, raycast[1][1]), (raycast[0][0]+.1, raycast[0][1])]
+            self.viewer.draw_polygon(path, color=(1, 0.0, 0.0))
+            
+    def render_wall_segments(self):
+        for path in self.wall_segments:
+            self.viewer.draw_polygon(path, color=(0.0, 0.0, 1))
+
     def get_min_distances(self):
-        # Retrieves the distance to the nearest track tile centroid
+        # Retrieves the distance to the nearest track tile centroid. Returns distance from left and right wheels, and close tiles
         wheels = self.car.wheels
         (front_left_wheel, front_right_wheel) = (wheels[0].position, wheels[1].position)
         min_left_distance = 9999
         min_right_distance = 9999
+        close_tiles = []
         for road_tile in self.road:
             road_tile_position = road_tile.fixtures[0].shape.centroid
-            t_distance = math.sqrt(abs(road_tile_position.x - front_left_wheel.x) ** 2 + abs(road_tile_position.y - front_left_wheel.y) ** 2)
-            if t_distance < min_left_distance:
-                min_left_distance = t_distance
-            t_distance = math.sqrt(abs(road_tile_position.x - front_right_wheel.x) ** 2 + abs(road_tile_position.y - front_right_wheel.y) ** 2)
-            if t_distance < min_right_distance:
-                min_right_distance = t_distance
-        return min_left_distance, min_right_distance
+            lt_distance = math.sqrt(abs(road_tile_position.x - front_left_wheel.x) ** 2 + abs(road_tile_position.y - front_left_wheel.y) ** 2)
+            if lt_distance < min_left_distance:
+                min_left_distance = lt_distance
+            rt_distance = math.sqrt(abs(road_tile_position.x - front_right_wheel.x) ** 2 + abs(road_tile_position.y - front_right_wheel.y) ** 2)
+            if rt_distance < min_right_distance:
+                min_right_distance = rt_distance
+            
+            if lt_distance < RAY_CAST_DISTANCE or rt_distance < RAY_CAST_DISTANCE:
+                close_tiles.append((road_tile.fixtures[0].shape.vertices, lt_distance))
+        close_tiles.sort(key=lambda x: x[1])
+        close_tiles = [x[0] for x in close_tiles]
+
+        return min_left_distance, min_right_distance, close_tiles
+
+    def get_raycast_points(self, tiles):
+        # Loop through my raycast sensors and find intersection distances for each sensor with the given tiles.
+        # Angles are arc from -90deg to +90deg
+        start_angle = -math.pi/2
+        end_angle = math.pi/2
+        interval = math.pi
+        rotation = math.pi/2 # Correction factor
+        angles = np.arange(start_angle, end_angle+interval/(NUM_SENSORS-1), interval/(NUM_SENSORS-1))
+        # Add current orientation of car
+        angles = [i + self.car.hull.angle + rotation for i in angles]
+        # Get relative endpoints of raycast
+        rel_endpts = [(math.cos(a)*RAY_CAST_DISTANCE, math.sin(a)*RAY_CAST_DISTANCE) for a in angles]
+        # Get global enpoints of raycast
+        endpts = [(x + self.car.hull.position.x, y + self.car.hull.position.y) for x, y in rel_endpts]
+        # Get line segments from car to end of raycast
+        raycasts = [((self.car.hull.position.x, self.car.hull.position.y), endpoint) for endpoint in endpts]
+
+        self.raycasts = raycasts
+
+        # Get wall segments
+        wall_segments = []
+        for tile in tiles:
+            dist1 = math.sqrt((tile[0][0] - tile[3][0])**2 +
+                        (tile[0][1] - tile[3][1])**2)
+            dist2 = math.sqrt((tile[0][0] - tile[1][0])**2 +
+                              (tile[2][1] - tile[3][1])**2)
+            if dist1 < dist2:
+                wall_segments.append((tile[0], tile[3]))
+                wall_segments.append((tile[1], tile[2]))
+            else:
+                wall_segments.append((tile[0], tile[1]))
+                wall_segments.append((tile[2], tile[3]))
+        
+        # Add them to  be drawn later
+        self.wall_segments = []
+        for wall_segment in wall_segments:
+            path = [(wall_segment[0][0], wall_segment[0][1]), (wall_segment[1][0], wall_segment[1][1]),
+                    (wall_segment[1][0]+.1, wall_segment[1][1]+.1), (wall_segment[0][0]+.1, wall_segment[0][1]+.1)]
+            self.wall_segments.append(path)
+
+        
+        def intersection(seg1, seg2):
+            # Based on wikipedia https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
+            x1, y1 = seg1[0]
+            x2, y2 = seg1[1]
+            x3, y3 = seg2[0]
+            x4, y4 = seg2[1]
+
+            denom = (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4)
+            if math.isclose(denom, 0):
+                # Denominator close to 0 means lines parallel
+                return None
+
+            t_num = (x1-x3)*(y3-y4)-(y1-y3)*(x3-x4)
+            t = t_num/denom        
+            u_num = (x1-x2)*(y1-y3)-(y1-y2)*(x3-x4)
+            u = u_num/denom
+
+            if t >= 0.0 and t <= 1.0 and u >= 0.0 and u <= 1.0:
+                return (x1 + t*(x2-x1), y1 + t*(y2-y1))
+
+        # Loop through points, get the intersection of the closest wall
+        int_dist = []
+        for raycast in raycasts:
+            ray_int_points = []
+            for wall in wall_segments:
+                int_point = intersection(raycast, wall)
+                if int_point is not None:
+                    dist = math.sqrt((self.car.hull.position.x - int_point[0])**2 + (self.car.hull.position.y-int_point[1])**2)
+                    ray_int_points.append((dist, [int_point[0], int_point[1]]))
+            if ray_int_points:
+                ray_int_points.sort()
+                # ceil division, +1 to keep between [0,RAY_CAST_INTERVALS]
+                dist = ray_int_points[0][0]
+                raycast_state = int(-(-dist // (RAY_CAST_INTERVALS)))-1
+                int_dist.append(raycast_state)
+            else:
+                int_dist.append(RAY_CAST_INTERVALS-1) # Max range
+
+        return int_dist
+
 
 if __name__=="__main__":
     from pyglet.window import key
