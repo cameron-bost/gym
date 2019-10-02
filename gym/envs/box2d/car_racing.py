@@ -117,7 +117,7 @@ class CarRacing(gym.Env, EzPickle):
         'video.frames_per_second' : FPS
     }
 
-    def __init__(self, verbose=1):
+    def __init__(self, verbose=0):
         EzPickle.__init__(self)
         self.seed()
         self.contactListener_keepref = FrictionDetector(self)
@@ -358,7 +358,8 @@ class CarRacing(gym.Env, EzPickle):
         speed_state = int(-(-speed // (SPEED_INTERVALS + 1)))
 
         # Get raycast distances
-        raycast_dist_state = self.get_raycast_points(close_tiles)
+        raycast_dist = self.get_raycast_points(close_tiles)
+        raycast_dist_state = [int(dist // (RAY_CAST_DISTANCE/RAY_CAST_INTERVALS)) for dist in raycast_dist]
 
         # self.state = (wheel_distance_states[0],
         #               wheel_distance_states[1],
@@ -396,7 +397,7 @@ class CarRacing(gym.Env, EzPickle):
 
         if "t" not in self.__dict__: return  # reset() not called yet
 
-        zoom = 0.1*SCALE*max(1-self.t, 0) + ZOOM*SCALE*min(self.t, 1)   # Animate zoom first second
+        zoom = 0.3*SCALE*max(1-self.t, 0) + ZOOM*SCALE*min(self.t, 1)   # Animate zoom first second
         zoom_state  = ZOOM*SCALE*STATE_W/WINDOW_W
         zoom_video  = ZOOM*SCALE*VIDEO_W/WINDOW_W
         scroll_x = self.car.hull.position[0]
@@ -408,10 +409,10 @@ class CarRacing(gym.Env, EzPickle):
         self.transform.set_scale(zoom, zoom)
         self.transform.set_translation(
             WINDOW_W/2 - (scroll_x*zoom*math.cos(angle) - scroll_y*zoom*math.sin(angle)),
-            WINDOW_H/4 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
+            WINDOW_H/2 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
         self.transform.set_rotation(angle)
         # self.transform.set_scale(2, 2)
-        # self.transform.set_translation(WINDOW_W/2 - scroll_x, WINDOW_H/2 - scroll_y)
+        # self.transform.set_translation(WINDOW_W/2, WINDOW_H/2)
         self.car.draw(self.viewer, mode!="state_pixels")
 
         arr = None
@@ -444,6 +445,7 @@ class CarRacing(gym.Env, EzPickle):
         self.render_indicators(WINDOW_W, WINDOW_H)
         self.render_raycasts()
         self.render_wall_segments()
+        self.render_intersections()
 
         if mode == 'human':
             win.flip()
@@ -517,12 +519,16 @@ class CarRacing(gym.Env, EzPickle):
 
     def render_raycasts(self):
         for raycast in self.raycasts:
-            path = [(raycast[0][0], raycast[0][1]), (raycast[1][0], raycast[1][1]), (raycast[1][0]+.1, raycast[1][1]), (raycast[0][0]+.1, raycast[0][1])]
-            self.viewer.draw_polygon(path, color=(1, 0.0, 0.0))
+            path = [(raycast[0][0], raycast[0][1]), (raycast[1][0], raycast[1][1])]
+            self.viewer.draw_line(start=path[0], end=path[1], color=(1, 0.0, 0.0), linewidth=3)
             
     def render_wall_segments(self):
         for path in self.wall_segments:
-            self.viewer.draw_polygon(path, color=(0.0, 0.0, 1))
+            self.viewer.draw_line(start=path[0], end=path[1], color=(0.0, 0.0, 1), linewidth=3)
+
+    def render_intersections(self):
+        for point in self.intersections:
+            self.viewer.draw_circle(point, color=(0.0, 1, 0.0), radius = 1)
 
     def get_min_distances(self):
         # Retrieves the distance to the nearest track tile centroid. Returns distance from left and right wheels, and close tiles
@@ -550,9 +556,9 @@ class CarRacing(gym.Env, EzPickle):
     def get_raycast_points(self, tiles):
         # Loop through my raycast sensors and find intersection distances for each sensor with the given tiles.
         # Angles are arc from -90deg to +90deg
-        start_angle = -math.pi/2
-        end_angle = math.pi/2
-        interval = math.pi
+        start_angle = -math.pi/4
+        end_angle = math.pi/4
+        interval = abs(start_angle-end_angle)
         rotation = math.pi/2 # Correction factor
         angles = np.arange(start_angle, end_angle+interval/(NUM_SENSORS-1), interval/(NUM_SENSORS-1))
         # Add current orientation of car
@@ -610,6 +616,7 @@ class CarRacing(gym.Env, EzPickle):
 
         # Loop through points, get the intersection of the closest wall
         int_dist = []
+        self.intersections = []
         for raycast in raycasts:
             ray_int_points = []
             for wall in wall_segments:
@@ -619,12 +626,12 @@ class CarRacing(gym.Env, EzPickle):
                     ray_int_points.append((dist, [int_point[0], int_point[1]]))
             if ray_int_points:
                 ray_int_points.sort()
-                # ceil division, +1 to keep between [0,RAY_CAST_INTERVALS]
                 dist = ray_int_points[0][0]
-                raycast_state = int(-(-dist // (RAY_CAST_INTERVALS)))-1
-                int_dist.append(raycast_state)
+                point = ray_int_points[0][1]
+                self.intersections.append(point)
+                int_dist.append(dist)
             else:
-                int_dist.append(RAY_CAST_INTERVALS-1) # Max range
+                int_dist.append(RAY_CAST_DISTANCE-1) # Max range
 
         return int_dist
 
