@@ -108,7 +108,7 @@ class FrictionDetector(contactListener):
             # print tile.road_friction, "ADD", len(obj.tiles)
             if not tile.road_visited:
                 tile.road_visited = True
-                self.env.reward += 100.0/len(self.env.track)
+                self.env.reward += 1
                 self.env.tile_visited_count += 1
         else:
             obj.tiles.remove(tile)
@@ -391,8 +391,11 @@ class CarRacing(gym.Env, EzPickle):
 
         if action is not None: # First step without action, called from reset()
          
+            # Negative reward based on time
+            step_reward = -.1
 
-        if action is not None: # First step without action, called from reset()
+            # positive speed reward
+            step_reward += math.log10(speed+1)*.4
             
             # negative reward for steering away from away raypoint
             # Get max angle (or average of them if multiple)
@@ -418,8 +421,11 @@ class CarRacing(gym.Env, EzPickle):
                 done = True
                 step_reward -= 20
 
-            # Negative reward based on distance to track, increased by speed
-            step_reward -= sum([0.01*i*speed_state for i in min_distances])
+            # Negative reward based on distance to wall, increased by speed
+            dist_score = sum([0.011*(speed*1.8+1)*(2)**(-distance/5)
+                              for distance in raycast_dist])
+            # print(dist_score)
+            step_reward -= dist_score
 
 
             # We actually don't want to count fuel spent, we want car to be faster.
