@@ -12,6 +12,8 @@ from gym.utils import colorize, seeding, EzPickle
 import pyglet
 from pyglet import gl
 
+import random
+
 # Easiest continuous control task to learn from pixels, a top-down racing environment.
 # Discrete control is reasonable in this environment as well, on/off discretization is
 # fine.
@@ -175,6 +177,9 @@ class CarRacing(gym.Env, EzPickle):
     def _create_track(self):
         CHECKPOINTS = 12
 
+        # direction = -1 for right turns, 1 for left turns
+        direction = self.track_direction
+
         # Create checkpoints
         checkpoints = []
         for c in range(CHECKPOINTS):
@@ -189,7 +194,7 @@ class CarRacing(gym.Env, EzPickle):
                 rad = 1.5*TRACK_RAD
             checkpoints.append( (alpha, rad*math.cos(alpha), rad*math.sin(alpha)) )
 
-        # print "\n".join(str(h) for h in checkpoints)
+        # print("\n".join(str(h) for h in checkpoints))
         # self.road_poly = [ (    # uncomment this to see checkpoints
         #    [ (tx,ty) for a,tx,ty in checkpoints ],
         #    (0.7,0.7,0.9) ) ]
@@ -243,7 +248,7 @@ class CarRacing(gym.Env, EzPickle):
                  beta += min(TRACK_TURN_RATE, abs(0.001*proj))
             x += p1x*TRACK_DETAIL_STEP
             y += p1y*TRACK_DETAIL_STEP
-            track.append( (alpha,prev_beta*0.5 + beta*0.5,x,y) )
+            track.append( (alpha,prev_beta*0.5 + beta*0.5, direction*x, direction*y) )
             if laps > 4:
                  break
             no_freeze -= 1
@@ -333,6 +338,7 @@ class CarRacing(gym.Env, EzPickle):
         self.tile_visited_count = 0
         self.t = 0.0
         self.road_poly = []
+        self.track_direction = random.choice([-1,1])
 
         while True:
             success = self._create_track()
