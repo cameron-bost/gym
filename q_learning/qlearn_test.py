@@ -9,6 +9,7 @@ from shutil import copyfile
 import numpy as np
 import gym
 from random import choices
+import sys
 
 EXPERIMENT = "sensors"
 cur_path = os.path.dirname(__file__)
@@ -218,31 +219,86 @@ def do_policy_episode(policy, max_iterations):
             do_terminate_qlearn = True
     return tiles_visited_list, tiles_per_iter
 
+
+def do_human(max_iterations, actions):
+    global do_terminate_qlearn, q_table
+    # Perform a run using the human
+    current_state = env.reset()
+    iteration_ctr = 0
+
+    tiles_visited_list = []
+    tiles_per_iter = 0
+    current_average_reward = 0
+
+    # Repeat until max iterations have passed or agent reaches terminal state
+    while not do_terminate_qlearn and iteration_ctr <= max_iterations:
+        # Keep that UI train rolling
+        env.render()
+
+        # Perform action, update state
+        next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(actions)
+
         # Update agent state variables
         current_state = next_state
         iteration_ctr += 1
 
-        # Update reward trackers
+        # Update reward trackers, only use tile visited so that the reward function can be evaluated independently
+        tiles_visited_list.append(tile_visited_count)
+        tiles_per_iter = tile_visited_count / iteration_ctr
         current_average_reward = (
             current_average_reward*(iteration_ctr-1) + reward)/iteration_ctr
-        cumulative_reward_list.append(current_average_reward)
 
         # After some number of iterations we automatically terminate the episode
         if iteration_ctr > max_iterations:
             # print("Note: Terminating episode due to max iterations exceeded")
             do_terminate_qlearn = True
-    return current_average_reward, cumulative_reward_list
+    return tiles_visited_list, tiles_per_iter
 
 if __name__ == "__main__":
     print("Initializing Q-Table...")
     init_q_table()
-    # do_qlearn_episode(start_episode)
 
     max_iterations = EPISODE_ITERATION_INIT + (start_episode // EPISODE_ITERATION_INCREMENT_INTERVAL) * EPISODE_ITERATION_INCREMENT
+    
     gamma_incr = (GAMMA_MAX-GAMMA_INIT)/GAMMA_MAX_EPISODE # From wiki, start low then end high
     gamma = min(GAMMA_MAX, GAMMA_INIT + gamma_incr * start_episode)
-    episode_reward_list = []
-    cumulative_reward_list = None
+    
+    episode_tiles_per_iter_list = []
+    tiles_visited_list = None
+    
+    if len(sys.argv) > 1:
+        try:
+            if sys.argv[1] == "greedy":
+                while True:
+                    tiles_visited_list, tiles_per_iter = do_policy_episode(greedy, MAX_ITER_PER_EPISODE)
+                    do_terminate_qlearn = False
+                    print(f"Greedy episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
+            elif sys.argv[1] == "human":
+                # Keyboard stuff
+                from pyglet.window import key
+                actions = np.array([0.0, 0.0, 0.0])
+                def key_press(k, mod):
+                    if k==key.LEFT:  actions[0] = 1
+                    if k==key.RIGHT: actions[0] = 2
+                    if k==key.UP:    actions[1] = 1
+                    if k==key.DOWN:  actions[2] = 1
+                def key_release(k, mod):
+                    if k==key.LEFT  and actions[0]==1: actions[0] = 0
+                    if k==key.RIGHT and actions[0]==2: actions[0] = 0
+                    if k==key.UP:    actions[1] = 0
+                    if k==key.DOWN:  actions[2] = 0
+                env.render()
+                env.viewer.window.on_key_press = key_press
+                env.viewer.window.on_key_release = key_release
+                while True:
+                    tiles_visited_list, tiles_per_iter = do_human(MAX_ITER_PER_EPISODE, actions)
+                    do_terminate_qlearn = False
+                    print(f"Human episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
+        except KeyboardInterrupt:
+            sys.exit(0)
+        
+
+    
     for episode in range(start_episode, NUM_EPISODES):
         if episode % EPISODE_ITERATION_INCREMENT_INTERVAL == 0:
             max_iterations += EPISODE_ITERATION_INCREMENT
