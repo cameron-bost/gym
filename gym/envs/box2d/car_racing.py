@@ -393,15 +393,17 @@ class CarRacing(gym.Env, EzPickle):
 
         step_reward = 0
         done = False
+        reward_list = []
         
-
         if action is not None: # First step without action, called from reset()
          
             # Negative reward based on time
-            step_reward = -.1
+            time_reward = -0.1
+            reward_list.append(("time",time_reward))
 
             # positive speed reward
-            step_reward += math.log10(speed+1)*.4
+            speed_reward = math.log10(speed+1)*0.05
+            reward_list.append(("speed", speed_reward))
             
             # negative reward for steering away from away raypoint
             # Get max angle (or average of them if multiple)
@@ -415,24 +417,69 @@ class CarRacing(gym.Env, EzPickle):
             abs_steer = joint_angle + self.car.hull.angle + math.pi/2
             # Get difference between them, and score based on the difference
             angle_diff = abs(avg_angle - abs_steer)
-            step_reward -= angle_diff/10
+            # Score proportional to sum of distances (more close sensors = bad)
+            gas = self.car.wheels[2].gas + 1
+            raycast_dist_normalized = 3 - (3-1)/(75-10)*(sum(raycast_dist)-10)+1
+            angle_diff_normalized = 1-1/(1.2)*(angle_diff)
+            steer_reward = 0.3* (speed_reward/2+.1) * angle_diff_normalized * raycast_dist_normalized
+            reward_list.append(("steer", steer_reward))
 
-            # Increase the negative time reward by each dist over limit. 
+            # Stop the run if both wheels outside bounds of track
             cnt = 0
             for dist in min_distances:
                 if dist > DISTANCE_INTERVALS:
-                    step_reward *= 1.25
                     cnt += 1
             if cnt == len(min_distances):
                 done = True
-                step_reward -= 20
+                step_reward -= 10
 
-            # Negative reward based on distance to wall, increased by speed
-            dist_score = sum([0.011*(speed*1.8+1)*(2)**(-distance/5)
-                              for distance in raycast_dist])
-            # print(dist_score)
-            step_reward -= dist_score
+            # Positive reward for going toward the next tile.
+            def minimum_distance(v, w, p):
+                # Return minimum distance between line segment vw and point p
+                l2 = np.sum((w-v)**2)
+                if l2 == 0.0:
+                    return np.linalg.norm(p - v)  # v == w
+                t = max(0, min(1, np.dot(p - v, w - v) / l2))
+                projection = v + t * (w - v)
+                return np.linalg.norm(p - projection)
 
+            try:
+                next_tile = next(tile for tile in close_tiles if tile.road_visited is False)
+                # Get closest vertex of next tile
+                x, y = self.car.hull.position
+                car_pos = np.array([x, y])
+                verts = [np.array([vertex[0], vertex[1]])
+                        for vertex in next_tile.fixtures[0].shape.vertices]
+                i, min_vertex = min([(index, vertex) for index, vertex in enumerate(
+                    verts)], key=lambda vert: np.linalg.norm(car_pos - vert[1]))
+                opp_vertex = None
+                if np.linalg.norm(verts[i] - verts[(i+1) % 4]) > np.linalg.norm(verts[i] - verts[(i-1) % 4]):
+                    opp_vertex = verts[(i+1) % 4]
+                else:
+                    opp_vertex = verts[(i-1) % 4]
+
+                cur_tile_dist = minimum_distance(min_vertex, opp_vertex, car_pos)
+                if hasattr(self, "tile_dist"):
+                    dtd = cur_tile_dist - self.tile_dist
+                    if dtd <= 1:  # Filter out "jumps" by only updating when decreasing
+                        self.dtile_dist = dtd
+                    tile_dist_score = -0.25*self.dtile_dist
+                    reward_list.append(("tile_dist_score", tile_dist_score))
+                self.tile_dist = cur_tile_dist
+                
+            except StopIteration:
+                pass
+
+            # Small negative reward based on raycast distance to wall
+            raycast_reward = -0.3 + 0.3 / (75-10)*(sum(raycast_dist)-10)/(speed_reward+1)
+            reward_list.append(("raycast_reward", raycast_reward))
+
+            # Reduce score if wheel off track.
+            wheel_reward = -1*(0.2 if 1 in wheel_on_off_states else 0)
+            reward_list.append(("wheel",wheel_reward))
+
+            step_reward += sum([r for n, r in reward_list])
+            # print(*[f"{n}:{r:.2f}" for n, r in reward_list])
 
             # We actually don't want to count fuel spent, we want car to be faster.
             # self.reward -=  10 * self.car.fuel_spent / ENGINE_POWER
@@ -447,7 +494,7 @@ class CarRacing(gym.Env, EzPickle):
                 done = True
                 step_reward = -100
 
-        return self.state, step_reward, done, {}
+        return self.state, step_reward, done, self.tile_visited_count
 
     def render(self, mode='human'):
         assert mode in ['human', 'state_pixels', 'rgb_array']
@@ -611,7 +658,7 @@ class CarRacing(gym.Env, EzPickle):
                 min_right_distance = rt_distance
             
             if lt_distance < RAY_CAST_DISTANCE or rt_distance < RAY_CAST_DISTANCE:
-                close_tiles.append((road_tile.fixtures[0].shape.vertices, lt_distance))
+                close_tiles.append((road_tile, lt_distance))
         close_tiles.sort(key=lambda x: x[1])
         close_tiles = [x[0] for x in close_tiles]
 
@@ -640,18 +687,19 @@ class CarRacing(gym.Env, EzPickle):
         # Get wall segments
         wall_segments = []
         for tile in tiles:
-            if len(tile) < 4:
+            verts = tile.fixtures[0].shape.vertices
+            if len(verts) < 4:
                 continue
-            dist1 = math.sqrt((tile[0][0] - tile[3][0])**2 +
-                        (tile[0][1] - tile[3][1])**2)
-            dist2 = math.sqrt((tile[0][0] - tile[1][0])**2 +
-                              (tile[2][1] - tile[3][1])**2)
+            dist1 = math.sqrt((verts[0][0] - verts[3][0])**2 +
+                        (verts[0][1] - verts[3][1])**2)
+            dist2 = math.sqrt((verts[0][0] - verts[1][0])**2 +
+                              (verts[2][1] - verts[3][1])**2)
             if dist1 < dist2:
-                wall_segments.append((tile[0], tile[3]))
-                wall_segments.append((tile[1], tile[2]))
+                wall_segments.append((verts[0], verts[3]))
+                wall_segments.append((verts[1], verts[2]))
             else:
-                wall_segments.append((tile[0], tile[1]))
-                wall_segments.append((tile[2], tile[3]))
+                wall_segments.append((verts[0], verts[1]))
+                wall_segments.append((verts[2], verts[3]))
         
         # Add them to  be drawn later
         self.wall_segments = []
