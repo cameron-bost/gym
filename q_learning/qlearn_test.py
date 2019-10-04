@@ -51,7 +51,7 @@ MIN_EXPLORE_RATE=0.05
 q_table = None
 
 # Exports the current contents of the Q-Table to disk and creates a backup of the previous contents.
-def export_qtable(episode_num, episode_reward_list, cumulative_reward_list):
+def export_qtable(episode_num, episode_tiles_per_iter_list, tiles_visited_list):
     global q_table, cur_path, q_path
 
     if episode_num % Q_SAVE_INTERVAL == 0 and episode_num > 0:
@@ -66,11 +66,11 @@ def export_qtable(episode_num, episode_reward_list, cumulative_reward_list):
     if episode_num % STATS_SAVE_INTERVAL == 0 and episode_num > 0:
         print("Exporting Rewards...")
         path = os.path.join(cur_path, "rewards\\")
-        fname = f'{EXPERIMENT}_ep{episode_num-STATS_SAVE_INTERVAL+1}_{episode_num}_rewards'
-        np.savetxt(path+fname+".gz", episode_reward_list)
-        if cumulative_reward_list:
-            fname = f'{EXPERIMENT}_ep{episode_num}_rewards'
-            np.savetxt(path+fname+".gz", cumulative_reward_list)
+        fname = f'{EXPERIMENT}_ep{episode_num-STATS_SAVE_INTERVAL+1}_{episode_num}_tiles_per_iter_per_ep'
+        np.savetxt(path+fname+".gz", episode_tiles_per_iter_list)
+        if tiles_visited_list:
+            fname = f'{EXPERIMENT}_ep{episode_num}_tiles'
+            np.savetxt(path+fname+".gz", tiles_visited_list)
 
         return True
     else:
@@ -101,9 +101,10 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
     # Initial state is determined by environment
     current_state = env.reset()
     iteration_ctr = 0
-    # We track the rolling average reward to observe the agent's overall success
+    
+    tiles_visited_list = []
+    tiles_per_iter = 0
     current_average_reward = 0
-
     # Repeat until max iterations have passed or agent reaches terminal state
     while not do_terminate_qlearn and iteration_ctr <= max_iterations:
 
@@ -115,7 +116,7 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
         
         
         # Perform action, update state
-        next_state, reward, do_terminate_qlearn, info = env.step(selected_action)
+        next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(selected_action)
 
         # Update Q-Table w/ standard Q-Learning rule
         next_state_index = np.ravel_multi_index(next_state, env.observation_space.nvec)
@@ -126,15 +127,17 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
         current_state = next_state
         iteration_ctr += 1
 
-        # Update reward trackers
+        # Update reward trackers, only use tile visited so that the reward function can be evaluated independently
+        tiles_visited_list.append(tile_visited_count)
+        tiles_per_iter = tile_visited_count / iteration_ctr
         current_average_reward = (current_average_reward*(iteration_ctr-1) + reward)/iteration_ctr
 
         # After some number of iterations we automatically terminate the episode
         if iteration_ctr > max_iterations:
             # print("Note: Terminating episode due to max iterations exceeded")
             do_terminate_qlearn = True
-    print(f"Episode {episode_num} completed. Average score: {current_average_reward}")
-    return current_average_reward
+    print(f"Episode {episode_num} completed. Tiles per iter: {tiles_per_iter:.4f} Avg Reward: {current_average_reward:.4f}")
+    return tiles_visited_list, tiles_per_iter
 
 def expected_sarsa(reward, current_state_index, selected_action_index, next_state_index, gamma):
     action_list = q_table[next_state_index]
@@ -180,7 +183,8 @@ def do_policy_episode(policy, max_iterations):
     current_state = env.reset()
     iteration_ctr = 0
 
-    cumulative_reward_list = []
+    tiles_visited_list = []
+    tiles_per_iter = 0
     current_average_reward = 0
 
     # Repeat until max iterations have passed or agent reaches terminal state
@@ -194,7 +198,25 @@ def do_policy_episode(policy, max_iterations):
         selected_action = np.unravel_index(selected_action_index, env.action_space.nvec)
 
         # Perform action, update state
-        next_state, reward, do_terminate_qlearn, info = env.step(selected_action)
+        next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(
+            selected_action)
+
+        # Update agent state variables
+        current_state = next_state
+        iteration_ctr += 1
+
+        # Update reward trackers, only use tile visited so that the reward function can be evaluated independently
+        tiles_visited_list.append(tile_visited_count)
+        tiles_per_iter = tile_visited_count / iteration_ctr
+        current_average_reward = (
+            current_average_reward*(iteration_ctr-1) + reward)/iteration_ctr
+
+
+        # After some number of iterations we automatically terminate the episode
+        if iteration_ctr > max_iterations:
+            # print("Note: Terminating episode due to max iterations exceeded")
+            do_terminate_qlearn = True
+    return tiles_visited_list, tiles_per_iter
 
         # Update agent state variables
         current_state = next_state
@@ -229,18 +251,21 @@ if __name__ == "__main__":
         exploration_rate = min(MAX_EXPLORE_RATE*(1-EXPLORE_DECAY_RATE)**episode, MIN_EXPLORE_RATE)
         gamma = min(GAMMA_MAX, gamma + gamma_incr)
 
-        current_average_reward = do_qlearn_episode(
+        tiles_visited_list, tiles_per_iter = do_qlearn_episode(
             episode, exponential_explore, expected_sarsa, max_iterations, gamma)
+        tiles_visited_list = None
         do_terminate_qlearn = False
-        episode_reward_list.append(current_average_reward)
+        episode_tiles_per_iter_list.append(tiles_per_iter)
 
         if VIEW_INTERVAL > 0 and episode % VIEW_INTERVAL == 0:
             # show the viewer what we've learned so far
-            current_average_reward, cumulative_reward_list = do_policy_episode(
+            tiles_visited_list, tiles_per_iter = do_policy_episode(
                 greedy, max_iterations)
-            print(f"Greedy policy after episode {episode} score: {current_average_reward}")
+            print(
+                f"Greedy policy after episode {episode} score: {tiles_per_iter}")
             do_terminate_qlearn = False
     
-        if export_qtable(episode, episode_reward_list, cumulative_reward_list):
-            episode_reward_list = []
+        if export_qtable(episode, episode_tiles_per_iter_list, tiles_visited_list):
+            episode_tiles_per_iter_list = []
+            tiles_visited_list = None
 
