@@ -630,19 +630,19 @@ class CarRacing(gym.Env, EzPickle):
 
     def render_raycasts(self):
         if hasattr(self, "raycasts"):
-        for raycast in self.raycasts:
-            path = [(raycast[0][0], raycast[0][1]), (raycast[1][0], raycast[1][1])]
-            self.viewer.draw_line(start=path[0], end=path[1], color=(1, 0.0, 0.0), linewidth=3)
+            for raycast in self.raycasts:
+                path = [(raycast[0][0], raycast[0][1]), (raycast[1][0], raycast[1][1])]
+                self.viewer.draw_line(start=path[0], end=path[1], color=(1, 0.0, 0.0), linewidth=3)
             
     def render_wall_segments(self):
         if hasattr(self, "wall_segments"):
-        for path in self.wall_segments:
-            self.viewer.draw_line(start=path[0], end=path[1], color=(0.0, 0.0, 1), linewidth=3)
+            for path in self.wall_segments:
+                self.viewer.draw_line(start=path[0], end=path[1], color=(0.0, 0.0, 1), linewidth=3)
 
     def render_intersections(self):
         if hasattr(self, "intersections"):
-        for point in self.intersections:
-            self.viewer.draw_circle(point, color=(0.0, 1, 0.0), radius = 1)
+            for point in self.intersections:
+                self.viewer.draw_circle(point, color=(0.0, 1, 0.0), radius = 1)
 
     def get_min_distances(self):
         # Retrieves the distance to the nearest track tile centroid. Returns distance from left and right wheels, and close tiles
