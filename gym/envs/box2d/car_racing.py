@@ -138,6 +138,7 @@ class CarRacing(gym.Env, EzPickle):
         self.fd_tile = fixtureDef(
                 shape = polygonShape(vertices=
                     [(0, 0),(1, 0),(1, -1),(0, -1)]))
+        self.slowness = 0
 
         """
         Action Space:
@@ -368,7 +369,7 @@ class CarRacing(gym.Env, EzPickle):
 
         speed = min(self.car.hull.linearVelocity.length, MAX_SPEED)
         # ceil division, +1 to keep between [0,SPEED_INTERVALS]
-        speed_state = int(0 if math.isclose(speed,0) else 1 if speed < 10.0 else math.ceil(speed // (MAX_SPEED/(SPEED_INTERVALS + 1))))
+        speed_state = int(0 if speed <= 2 else math.ceil(speed / (MAX_SPEED/(SPEED_INTERVALS))))
         
         if action is not None:
             # Get raycast distances
@@ -397,14 +398,29 @@ class CarRacing(gym.Env, EzPickle):
         
         if action is not None: # First step without action, called from reset()
          
+            ##REWARDS##
+
             # Negative reward based on time
             time_reward = -0.1
             reward_list.append(("time",time_reward))
 
             # positive speed reward
-            speed_reward = math.log10(speed+1)*0.05
+            speed_reward = (speed**0.5)/50
             reward_list.append(("speed", speed_reward))
-            
+
+            # Increasingly bad reward for not moving
+            if speed < 2:
+                self.slowness += 1
+            else:
+                self.slowness = 0
+            slow_reward = -0.01 * self.slowness
+            if self.slowness > 10:
+                # Slow for too long? shut 'er down
+                self.slowness = 0
+                slow_reward -= 10
+                done = True
+            reward_list.append(("slowness", slow_reward))
+
             # negative reward for steering away from away raypoint
             # Get max angle (or average of them if multiple)
             max_angles = []
@@ -431,7 +447,7 @@ class CarRacing(gym.Env, EzPickle):
                     cnt += 1
             if cnt == len(min_distances):
                 done = True
-                step_reward -= 10
+                step_reward -= 100
 
             # Positive reward for going toward the next tile.
             def minimum_distance(v, w, p):
@@ -463,7 +479,7 @@ class CarRacing(gym.Env, EzPickle):
                     dtd = cur_tile_dist - self.tile_dist
                     if dtd <= 1:  # Filter out "jumps" by only updating when decreasing
                         self.dtile_dist = dtd
-                    tile_dist_score = -0.25*self.dtile_dist
+                    tile_dist_score = 0.1*(abs(self.dtile_dist)**0.5)
                     reward_list.append(("tile_dist_score", tile_dist_score))
                 self.tile_dist = cur_tile_dist
                 
@@ -471,7 +487,7 @@ class CarRacing(gym.Env, EzPickle):
                 pass
 
             # Small negative reward based on raycast distance to wall
-            raycast_reward = -0.3 + 0.3 / (75-10)*(sum(raycast_dist)-10)/(speed_reward+1)
+            raycast_reward = -.5 + 0.5 / (75-10)*(sum(raycast_dist)-10)/(speed_state/10+1)
             reward_list.append(("raycast_reward", raycast_reward))
 
             # Reduce score if wheel off track.
