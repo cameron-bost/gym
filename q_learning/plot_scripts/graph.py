@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import statsmodels.api as sm
 
 EXPERIMENT = "hyperparametersA"
 EXPERIMENT_TITLE = "Double Expected Sarsa"
@@ -55,10 +56,13 @@ def graph_data(rewards_directory, experiment_name, metric_name, filter_fn=lambda
     fig = plt.figure(0)
     fig.canvas.set_window_title('CS 4033/5033 - Cameron Bost, Bryce Hennen')
     num_datasets = len(data)
-    color = (0.1, 0.2, 0.5, 0.9)
-    color_incr = (0.9-0.1)/len(data)
-    for dataset in data:
-        color = (color[0] + color_incr, color[1], color[2], color[3])
+    start_color = np.array((255, 204, 0))/255.0
+    end_color = np.array((128, 0, 0))/255.0
+    color_incr = (end_color - start_color)/len(data)
+    npcolor = start_color
+    for episode, dataset in enumerate(data):
+        if episode > 0: npcolor += color_incr
+        color = list(np.asarray(npcolor))
         filtered_data= [[],[]]
         for index, y_val in enumerate(dataset[1]):
             if filter_fn(y_val):
@@ -67,12 +71,44 @@ def graph_data(rewards_directory, experiment_name, metric_name, filter_fn=lambda
         x, y = filtered_data
         x = np.asarray(x)
         y = np.asarray(y)
-        plt.plot(x, y, color=color)
-        if metric_name == "tiles_per_iter":
-            A = np.vstack([x, np.ones(len(x))]).T
-            m, c = np.linalg.lstsq(A, y, rcond=None)[0]
-            plt.plot(x, m*x + c, "r", label=f'Fitted line - Slope:{m:4f}, Intercept:{c:4f}')
+        if metric_name == "tiles_visited":
+            if episode == 0:
+                plt.plot(x, y, color=color, label = "Early Episodes")
+            elif episode == len(data)-1:
+                plt.plot(x, y, color=color, label = "Later Episodes")
+            else:
+                plt.plot(x, y, color=color)
             plt.legend()
+        elif metric_name == "tiles_per_iter":
+            plt.plot(x, y, color=color)
+            # Lowess Smoothing Regression
+            frac = 1.0/10
+            fitted_vals = sm.nonparametric.lowess(y, x, frac = frac, return_sorted=False)
+            plt.plot(x, fitted_vals, "r", label=f"Lowess Regression, frac = {frac}")
+            plt.legend()
+            
+            # # Rolling Average 
+            # window = 50
+            # weights = np.repeat(1.0, window)/window
+            # avgs = np.convolve(weights, y, "valid")
+            # plt.plot(range(len(avgs)), avgs, "r", label=f"Rolling Average - Window Size = {window}")
+            # plt.legend()
+            
+            # Running Average
+            # running_avg = 0
+            # avgs = []
+            # for index, datum in enumerate(y):
+            #     total = index + 1
+            #     running_avg = (running_avg*(total-1) + datum)/total
+            #     avgs.append(running_avg)
+            # plt.plot(x, avgs, "r")
+            
+            # Linear Regression
+            # A = np.vstack([x, np.ones(len(x))]).T
+            # m, c = np.linalg.lstsq(A, y, rcond=None)[0]
+            # plt.plot(x, m*x + c, "r", label=f'Fitted line - Slope:{m:4f}, Intercept:{c:4f}')
+            # plt.legend()
+            
     if metric_name == "tiles_per_iter":    
         plt.xlabel('Episode')
         plt.ylabel('Tiles Per Iteration')
