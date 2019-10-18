@@ -116,8 +116,8 @@ class Viewer(object):
         return arr if return_rgb_array else self.isopen
 
     # Convenience
-    def draw_circle(self, center, radius=10, res=30, filled=True, **attrs):
-        geom = make_circle(center, radius=radius, res=res, filled=filled)
+    def draw_circle(self, radius=10, res=30, filled=True, **attrs):
+        geom = make_circle(radius=radius, res=res, filled=filled)
         _add_attrs(geom, attrs)
         self.add_onetime(geom)
         return geom
@@ -240,12 +240,11 @@ class FilledPolygon(Geom):
             glVertex3f(p[0], p[1],0)  # draw each vertex
         glEnd()
 
-def make_circle(center, radius=10, res=30, filled=True):
+def make_circle(radius=10, res=30, filled=True):
     points = []
     for i in range(res):
         ang = 2*math.pi*i / res
-        points.append((center[0] + math.cos(ang)*radius,
-                       center[1] + math.sin(ang)*radius))
+        points.append((math.cos(ang)*radius, math.sin(ang)*radius))
     if filled:
         return FilledPolygon(points)
     else:
@@ -300,9 +299,6 @@ class Line(Geom):
         self.linewidth = LineWidth(1)
         self.add_attr(self.linewidth)
 
-    def set_linewidth(self, x):
-        self.linewidth.stroke = x
-
     def render1(self):
         glBegin(GL_LINES)
         glVertex2f(*self.start)
@@ -335,8 +331,8 @@ class SimpleImageViewer(object):
                 scale = self.maxwidth / width
                 width = int(scale * width)
                 height = int(scale * height)
-            self.window = pyglet.window.Window(width=width, height=height, 
-                display=self.display, vsync=False, resizable=True)            
+            self.window = pyglet.window.Window(width=width, height=height,
+                display=self.display, vsync=False, resizable=True)
             self.width = width
             self.height = height
             self.isopen = True
@@ -351,9 +347,9 @@ class SimpleImageViewer(object):
                 self.isopen = False
 
         assert len(arr.shape) == 3, "You passed in an image with the wrong number shape"
-        image = pyglet.image.ImageData(arr.shape[1], arr.shape[0], 
+        image = pyglet.image.ImageData(arr.shape[1], arr.shape[0],
             'RGB', arr.tobytes(), pitch=arr.shape[1]*-3)
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, 
+        gl.glTexParameteri(gl.GL_TEXTURE_2D,
             gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
         texture = image.get_texture()
         texture.width = self.width
