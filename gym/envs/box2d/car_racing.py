@@ -12,6 +12,8 @@ from gym.utils import colorize, seeding, EzPickle
 import pyglet
 from pyglet import gl
 
+import random
+
 # Easiest continuous control task to learn from pixels, a top-down racing environment.
 # Discrete control is reasonable in this environment as well, on/off discretization is
 # fine.
@@ -39,8 +41,19 @@ from pyglet import gl
 #
 # Created by Oleg Klimov. Licensed on the same terms as the rest of OpenAI Gym.
 
+RAY_CAST_DISTANCE = 20
+NUM_SENSORS = 5
+RAY_CAST_INTERVALS = 5
+
 DISTANCE_INTERVALS = 6
 SPEED_INTERVALS = 10  # Number of intervals to discretize speed state into
+MAX_SPEED = 100
+
+STEER_INTERVALS = 3
+
+STEER_ACTION = {0:0.0, 1:-1.0, 2:1.0}
+GAS_ACTION = {0:0.0, 1:1.0}
+BRAKE_ACTION = {0: 0.0, 1: 0.8}  # set 1.0 for wheels to block to zero rotation
 
 STATE_W = 96   # less than Atari 160x192
 STATE_H = 96
@@ -97,7 +110,7 @@ class FrictionDetector(contactListener):
             # print tile.road_friction, "ADD", len(obj.tiles)
             if not tile.road_visited:
                 tile.road_visited = True
-                self.env.reward += 1000.0/len(self.env.track)
+                self.env.reward += 1
                 self.env.tile_visited_count += 1
         else:
             obj.tiles.remove(tile)
@@ -109,7 +122,7 @@ class CarRacing(gym.Env, EzPickle):
         'video.frames_per_second' : FPS
     }
 
-    def __init__(self, verbose=1):
+    def __init__(self, verbose=0):
         EzPickle.__init__(self)
         self.seed()
         self.contactListener_keepref = FrictionDetector(self)
@@ -125,9 +138,30 @@ class CarRacing(gym.Env, EzPickle):
         self.fd_tile = fixtureDef(
                 shape = polygonShape(vertices=
                     [(0, 0),(1, 0),(1, -1),(0, -1)]))
+        self.slowness = 0
 
-        self.action_space = spaces.Box( np.array([-1,0,0]), np.array([+1,+1,+1]), dtype=np.float32)  # steer, gas, brake
-        self.observation_space = spaces.Box(low=0, high=255, shape=(STATE_H, STATE_W, 3), dtype=np.uint8)
+        """
+        Action Space:
+        1) Steer: Discrete 3  - NOOP[0], Left[1], Right[2] - params: min: 0, max: 2
+        2) Gas: Discrete 2 - NOOP[0], Go[1] - params: min: 0, max: 1
+        3) Brake: Discrete 2  - NOOP[0], Brake[1] - params: min: 0, max: 1
+
+        Observation Space:
+        1) Speed: SPEED_INTERVALS + 1 discrete speeds
+        2) Sensors: RAY_CAST_INTERVALS * NUM_SENSORS
+        3) Wheel off or not ( for each wheel): 2
+        4) Steering: STEER_INTERVALS
+
+        """
+
+        self.action_space = spaces.MultiDiscrete([3, 2, 2])
+        self.observation_space = spaces.MultiDiscrete(
+            # [DISTANCE_INTERVALS + 1,
+            #  DISTANCE_INTERVALS + 1,
+            [SPEED_INTERVALS + 1]
+            + [RAY_CAST_INTERVALS]*NUM_SENSORS
+            # + [2, 2]
+            + [STEER_INTERVALS])
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -144,6 +178,9 @@ class CarRacing(gym.Env, EzPickle):
     def _create_track(self):
         CHECKPOINTS = 12
 
+        # direction = -1 for right turns, 1 for left turns
+        direction = self.track_direction
+
         # Create checkpoints
         checkpoints = []
         for c in range(CHECKPOINTS):
@@ -158,7 +195,7 @@ class CarRacing(gym.Env, EzPickle):
                 rad = 1.5*TRACK_RAD
             checkpoints.append( (alpha, rad*math.cos(alpha), rad*math.sin(alpha)) )
 
-        # print "\n".join(str(h) for h in checkpoints)
+        # print("\n".join(str(h) for h in checkpoints))
         # self.road_poly = [ (    # uncomment this to see checkpoints
         #    [ (tx,ty) for a,tx,ty in checkpoints ],
         #    (0.7,0.7,0.9) ) ]
@@ -212,7 +249,7 @@ class CarRacing(gym.Env, EzPickle):
                  beta += min(TRACK_TURN_RATE, abs(0.001*proj))
             x += p1x*TRACK_DETAIL_STEP
             y += p1y*TRACK_DETAIL_STEP
-            track.append( (alpha,prev_beta*0.5 + beta*0.5,x,y) )
+            track.append( (alpha,prev_beta*0.5 + beta*0.5, direction*x, direction*y) )
             if laps > 4:
                  break
             no_freeze -= 1
@@ -302,6 +339,7 @@ class CarRacing(gym.Env, EzPickle):
         self.tile_visited_count = 0
         self.t = 0.0
         self.road_poly = []
+        self.track_direction = random.choice([-1,1])
 
         while True:
             success = self._create_track()
@@ -315,30 +353,154 @@ class CarRacing(gym.Env, EzPickle):
 
     def step(self, action):
         if action is not None:
-            self.car.steer(-action[0])
-            self.car.gas(action[1])
-            self.car.brake(action[2])
+            self.car.steer(-STEER_ACTION[action[0]])
+            self.car.gas(GAS_ACTION[action[1]])
+            self.car.brake(BRAKE_ACTION[action[2]])
 
         self.car.step(1.0/FPS)
         self.world.Step(1.0/FPS, 6*30, 2*30)
         self.t += 1.0/FPS
 
-        min_left_distance, min_right_distance = self.get_min_distances()
-        state_wheel_distances = (min(DISTANCE_INTERVALS, int(min_left_distance)), min(DISTANCE_INTERVALS, int(min_right_distance)))
+        # Get distance to track tiles
+        min_left_distance, min_right_distance, close_tiles = self.get_min_distances()
+        min_distances = (min_left_distance, min_right_distance)
+        wheel_distance_states = (min(DISTANCE_INTERVALS, int(min_left_distance)),
+                                min(DISTANCE_INTERVALS, int(min_right_distance)))
 
-        speed = self.car.hull.linearVelocity.length
+        speed = min(self.car.hull.linearVelocity.length, MAX_SPEED)
         # ceil division, +1 to keep between [0,SPEED_INTERVALS]
-        speed_state = int(-(-speed // (SPEED_INTERVALS + 1)))
+        speed_state = int(0 if speed <= 2 else math.ceil(speed / (MAX_SPEED/(SPEED_INTERVALS))))
+        
+        if action is not None:
+            # Get raycast distances
+            raycast_dist = self.get_raycast_points(close_tiles)
+            raycast_dist_state = [int(dist // (RAY_CAST_DISTANCE/RAY_CAST_INTERVALS)) for dist in raycast_dist]
+        else:
+            raycast_dist_state = [RAY_CAST_INTERVALS-1 for i in range(RAY_CAST_INTERVALS)]
+        # print(raycast_dist)
 
-        self.state = self.render("state_pixels")
+        left_wheel_off = 1 if min_left_distance > DISTANCE_INTERVALS else 0
+        right_wheel_off = 1 if min_right_distance > DISTANCE_INTERVALS else 0
+        wheel_on_off_states = (left_wheel_off, right_wheel_off)
+
+        # Steer interval states
+        # Get wheel joint
+        joint = self.car.wheels[0].joint
+        joint_angle = np.clip(joint.angle, joint.lowerLimit, joint.upperLimit)
+        joint_range = joint.upperLimit - joint.lowerLimit
+        steer_state = min(int((joint_angle+joint_range/2) // (joint_range/(STEER_INTERVALS))), STEER_INTERVALS-1)
+
+        self.state = (speed_state,) + tuple(raycast_dist_state) + (steer_state,)
 
         step_reward = 0
         done = False
+        reward_list = []
+        
         if action is not None: # First step without action, called from reset()
-            self.reward -= 0.1
+         
+            ##REWARDS##
+
+            # Negative reward based on time
+            time_reward = -0.1
+            reward_list.append(("time",time_reward))
+
+            # positive speed reward
+            speed_reward = (speed**0.5)/50
+            reward_list.append(("speed", speed_reward))
+
+            # Increasingly bad reward for not moving
+            if speed < 2:
+                self.slowness += 1
+            else:
+                self.slowness = 0
+            slow_reward = -0.01 * self.slowness
+            if self.slowness > 10:
+                # Slow for too long? shut 'er down
+                self.slowness = 0
+                slow_reward -= 10
+                done = True
+            reward_list.append(("slowness", slow_reward))
+
+            # negative reward for steering away from away raypoint
+            # Get max angle (or average of them if multiple)
+            max_angles = []
+            max_dist = max(raycast_dist)
+            for index, ray in enumerate(raycast_dist):
+                if ray == max_dist:
+                    max_angles.append(self.raycast_angles[index])
+            avg_angle = sum(max_angles)/len(max_angles)
+            # Get steering angle
+            abs_steer = joint_angle + self.car.hull.angle + math.pi/2
+            # Get difference between them, and score based on the difference
+            angle_diff = abs(avg_angle - abs_steer)
+            # Score proportional to sum of distances (more close sensors = bad)
+            gas = self.car.wheels[2].gas + 1
+            raycast_dist_normalized = 3 - (3-1)/(75-10)*(sum(raycast_dist)-10)+1
+            angle_diff_normalized = 1-1/(1.2)*(angle_diff)
+            steer_reward = 0.3* (speed_reward/2+.1) * angle_diff_normalized * raycast_dist_normalized
+            reward_list.append(("steer", steer_reward))
+
+            # Stop the run if both wheels outside bounds of track
+            cnt = 0
+            for dist in min_distances:
+                if dist > DISTANCE_INTERVALS:
+                    cnt += 1
+            if cnt == len(min_distances):
+                done = True
+                step_reward -= 100
+
+            # Positive reward for going toward the next tile.
+            def minimum_distance(v, w, p):
+                # Return minimum distance between line segment vw and point p
+                l2 = np.sum((w-v)**2)
+                if l2 == 0.0:
+                    return np.linalg.norm(p - v)  # v == w
+                t = max(0, min(1, np.dot(p - v, w - v) / l2))
+                projection = v + t * (w - v)
+                return np.linalg.norm(p - projection)
+
+            try:
+                next_tile = next(tile for tile in close_tiles if tile.road_visited is False)
+                # Get closest vertex of next tile
+                x, y = self.car.hull.position
+                car_pos = np.array([x, y])
+                verts = [np.array([vertex[0], vertex[1]])
+                        for vertex in next_tile.fixtures[0].shape.vertices]
+                i, min_vertex = min([(index, vertex) for index, vertex in enumerate(
+                    verts)], key=lambda vert: np.linalg.norm(car_pos - vert[1]))
+                opp_vertex = None
+                if np.linalg.norm(verts[i] - verts[(i+1) % 4]) > np.linalg.norm(verts[i] - verts[(i-1) % 4]):
+                    opp_vertex = verts[(i+1) % 4]
+                else:
+                    opp_vertex = verts[(i-1) % 4]
+
+                cur_tile_dist = minimum_distance(min_vertex, opp_vertex, car_pos)
+                if hasattr(self, "tile_dist"):
+                    dtd = cur_tile_dist - self.tile_dist
+                    if dtd <= 1:  # Filter out "jumps" by only updating when decreasing
+                        self.dtile_dist = dtd
+                    tile_dist_score = 0.1*(abs(self.dtile_dist)**0.5)
+                    reward_list.append(("tile_dist_score", tile_dist_score))
+                self.tile_dist = cur_tile_dist
+                
+            except StopIteration:
+                pass
+
+            # Small negative reward based on raycast distance to wall
+            raycast_reward = -.5 + 0.5 / (75-10)*(sum(raycast_dist)-10)/(speed_state/10+1)
+            reward_list.append(("raycast_reward", raycast_reward))
+
+            # Reduce score if wheel off track.
+            wheel_reward = -1*(0.2 if 1 in wheel_on_off_states else 0)
+            reward_list.append(("wheel",wheel_reward))
+
+            step_reward += sum([r for n, r in reward_list])
+            # print(*[f"{n}:{r:.2f}" for n, r in reward_list])
+
             # We actually don't want to count fuel spent, we want car to be faster.
             # self.reward -=  10 * self.car.fuel_spent / ENGINE_POWER
             self.car.fuel_spent = 0.0
+            self.reward += step_reward
             step_reward = self.reward - self.prev_reward
             self.prev_reward = self.reward
             if self.tile_visited_count==len(self.track):
@@ -348,7 +510,7 @@ class CarRacing(gym.Env, EzPickle):
                 done = True
                 step_reward = -100
 
-        return self.state, step_reward, done, {}
+        return self.state, step_reward, done, self.tile_visited_count
 
     def render(self, mode='human'):
         assert mode in ['human', 'state_pixels', 'rgb_array']
@@ -362,7 +524,7 @@ class CarRacing(gym.Env, EzPickle):
 
         if "t" not in self.__dict__: return  # reset() not called yet
 
-        zoom = 0.1*SCALE*max(1-self.t, 0) + ZOOM*SCALE*min(self.t, 1)   # Animate zoom first second
+        zoom = 0.3*SCALE*max(1-self.t, 0) + ZOOM*SCALE*min(self.t, 1)   # Animate zoom first second
         zoom_state  = ZOOM*SCALE*STATE_W/WINDOW_W
         zoom_video  = ZOOM*SCALE*VIDEO_W/WINDOW_W
         scroll_x = self.car.hull.position[0]
@@ -374,9 +536,10 @@ class CarRacing(gym.Env, EzPickle):
         self.transform.set_scale(zoom, zoom)
         self.transform.set_translation(
             WINDOW_W/2 - (scroll_x*zoom*math.cos(angle) - scroll_y*zoom*math.sin(angle)),
-            WINDOW_H/4 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
+            WINDOW_H/2 - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
         self.transform.set_rotation(angle)
-
+        # self.transform.set_scale(2, 2)
+        # self.transform.set_translation(WINDOW_W/2, WINDOW_H/2)
         self.car.draw(self.viewer, mode!="state_pixels")
 
         arr = None
@@ -407,6 +570,9 @@ class CarRacing(gym.Env, EzPickle):
         self.viewer.onetime_geoms = []
         t.disable()
         self.render_indicators(WINDOW_W, WINDOW_H)
+        self.render_raycasts()
+        self.render_wall_segments()
+        self.render_intersections()
 
         if mode == 'human':
             win.flip()
@@ -478,21 +644,130 @@ class CarRacing(gym.Env, EzPickle):
         self.score_label.text = "%04i" % self.reward
         self.score_label.draw()
 
+    def render_raycasts(self):
+        if hasattr(self, "raycasts"):
+            for raycast in self.raycasts:
+                path = [(raycast[0][0], raycast[0][1]), (raycast[1][0], raycast[1][1])]
+                self.viewer.draw_line(start=path[0], end=path[1], color=(1, 0.0, 0.0), linewidth=3)
+            
+    def render_wall_segments(self):
+        if hasattr(self, "wall_segments"):
+            for path in self.wall_segments:
+                self.viewer.draw_line(start=path[0], end=path[1], color=(0.0, 0.0, 1), linewidth=3)
+
+    def render_intersections(self):
+        if hasattr(self, "intersections"):
+            for point in self.intersections:
+                self.viewer.draw_circle(point, color=(0.0, 1, 0.0), radius = 1)
+
     def get_min_distances(self):
-        # Retrieves the distance to the nearest track tile centroid
+        # Retrieves the distance to the nearest track tile centroid. Returns distance from left and right wheels, and close tiles
         wheels = self.car.wheels
         (front_left_wheel, front_right_wheel) = (wheels[0].position, wheels[1].position)
         min_left_distance = 9999
         min_right_distance = 9999
+        close_tiles = []
         for road_tile in self.road:
             road_tile_position = road_tile.fixtures[0].shape.centroid
-            t_distance = math.sqrt(abs(road_tile_position.x - front_left_wheel.x) ** 2 + abs(road_tile_position.y - front_left_wheel.y) ** 2)
-            if t_distance < min_left_distance:
-                min_left_distance = t_distance
-            t_distance = math.sqrt(abs(road_tile_position.x - front_right_wheel.x) ** 2 + abs(road_tile_position.y - front_right_wheel.y) ** 2)
-            if t_distance < min_right_distance:
-                min_right_distance = t_distance
-        return min_left_distance, min_right_distance
+            lt_distance = math.sqrt(abs(road_tile_position.x - front_left_wheel.x) ** 2 + abs(road_tile_position.y - front_left_wheel.y) ** 2)
+            if lt_distance < min_left_distance:
+                min_left_distance = lt_distance
+            rt_distance = math.sqrt(abs(road_tile_position.x - front_right_wheel.x) ** 2 + abs(road_tile_position.y - front_right_wheel.y) ** 2)
+            if rt_distance < min_right_distance:
+                min_right_distance = rt_distance
+            
+            if lt_distance < RAY_CAST_DISTANCE or rt_distance < RAY_CAST_DISTANCE:
+                close_tiles.append((road_tile, lt_distance))
+        close_tiles.sort(key=lambda x: x[1])
+        close_tiles = [x[0] for x in close_tiles]
+
+        return min_left_distance, min_right_distance, close_tiles
+
+    def get_raycast_points(self, tiles):
+        # Loop through my raycast sensors and find intersection distances for each sensor with the given tiles.
+        # Angles are arc from -90deg to +90deg
+        start_angle = -math.pi/4
+        end_angle = math.pi/4
+        interval = abs(start_angle-end_angle)
+        rotation = math.pi/2 # Correction factor
+        angles = np.arange(start_angle, end_angle+interval/(NUM_SENSORS-1), interval/(NUM_SENSORS-1))
+        # Add current orientation of car
+        angles = [i + self.car.hull.angle + rotation for i in angles]
+        # Get relative endpoints of raycast
+        rel_endpts = [(math.cos(a)*RAY_CAST_DISTANCE, math.sin(a)*RAY_CAST_DISTANCE) for a in angles]
+        # Get global enpoints of raycast
+        endpts = [(x + self.car.hull.position.x, y + self.car.hull.position.y) for x, y in rel_endpts]
+        # Get line segments from car to end of raycast
+        raycasts = [((self.car.hull.position.x, self.car.hull.position.y), endpoint) for endpoint in endpts]
+
+        self.raycasts = raycasts
+        self.raycast_angles = angles
+
+        # Get wall segments
+        wall_segments = []
+        for tile in tiles:
+            verts = tile.fixtures[0].shape.vertices
+            if len(verts) < 4:
+                continue
+            dist1 = math.sqrt((verts[0][0] - verts[3][0])**2 +
+                        (verts[0][1] - verts[3][1])**2)
+            dist2 = math.sqrt((verts[0][0] - verts[1][0])**2 +
+                              (verts[2][1] - verts[3][1])**2)
+            if dist1 < dist2:
+                wall_segments.append((verts[0], verts[3]))
+                wall_segments.append((verts[1], verts[2]))
+            else:
+                wall_segments.append((verts[0], verts[1]))
+                wall_segments.append((verts[2], verts[3]))
+        
+        # Add them to  be drawn later
+        self.wall_segments = []
+        for wall_segment in wall_segments:
+            path = [(wall_segment[0][0], wall_segment[0][1]), (wall_segment[1][0], wall_segment[1][1])]
+            self.wall_segments.append(path)
+
+        
+        def intersection(seg1, seg2):
+            # Based on this formula http://www-cs.ccny.cuny.edu/~wolberg/capstone/intersection/Intersection%20point%20of%20two%20lines.html
+            x1, y1 = seg1[0]
+            x2, y2 = seg1[1]
+            x3, y3 = seg2[0]
+            x4, y4 = seg2[1]
+
+            denom = (x2-x1)*(y4-y3)-(x4-x3)*(y2-y1)
+            if math.isclose(denom, 0):
+                # Denominator close to 0 means lines parallel
+                return None
+
+            t_num = (x4-x3)*(y1-y3)-(y4-y3)*(x1-x3)
+            t = t_num/denom        
+            u_num = (x2-x1)*(y1-y3)-(x1-x3)*(y2-y1)
+            u = u_num/denom
+
+            if t >= 0.0 and t <= 1.0 and u >= 0.0 and u <= 1.0:
+                return (x1 + t*(x2-x1), y1 + t*(y2-y1))
+
+        # Loop through points, get the intersection of the closest wall
+        int_dist = []
+        self.intersections = []
+        for raycast in raycasts:
+            ray_int_points = []
+            for wall in wall_segments:
+                int_point = intersection(raycast, wall)
+                if int_point is not None:
+                    dist = math.sqrt((self.car.hull.position.x - int_point[0])**2 + (self.car.hull.position.y-int_point[1])**2)
+                    ray_int_points.append((dist, [int_point[0], int_point[1]]))
+            if ray_int_points:
+                ray_int_points.sort()
+                dist = ray_int_points[0][0]
+                point = ray_int_points[0][1]
+                self.intersections.append(point)
+                int_dist.append(dist)
+            else:
+                int_dist.append(RAY_CAST_DISTANCE-1) # Max range
+
+        return int_dist
+
 
 if __name__=="__main__":
     from pyglet.window import key
@@ -500,13 +775,13 @@ if __name__=="__main__":
     def key_press(k, mod):
         global restart
         if k==0xff0d: restart = True
-        if k==key.LEFT:  a[0] = -1.0
-        if k==key.RIGHT: a[0] = +1.0
-        if k==key.UP:    a[1] = +1.0
-        if k==key.DOWN:  a[2] = +0.8   # set 1.0 for wheels to block to zero rotation
+        if k==key.LEFT:  a[0] = 1
+        if k==key.RIGHT: a[0] = 2
+        if k==key.UP:    a[1] = 1
+        if k==key.DOWN:  a[2] = 1
     def key_release(k, mod):
-        if k==key.LEFT  and a[0]==-1.0: a[0] = 0
-        if k==key.RIGHT and a[0]==+1.0: a[0] = 0
+        if k==key.LEFT  and a[0]==1: a[0] = 0
+        if k==key.RIGHT and a[0]==2: a[0] = 0
         if k==key.UP:    a[1] = 0
         if k==key.DOWN:  a[2] = 0
     env = CarRacing()
