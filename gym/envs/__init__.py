@@ -129,6 +129,13 @@ register(
     reward_threshold=900,
 )
 
+register(
+    id='CarRacingBostHennenQLearn-v0',
+    entry_point='gym.envs.box2d:CarRacingPoS',
+    max_episode_steps=999999,
+    reward_threshold=900,
+)
+
 # Toy Text
 # ----------------------------------------
 

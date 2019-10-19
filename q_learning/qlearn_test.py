@@ -22,7 +22,7 @@ q2_path = os.path.join(cur_path, q2_file)
 do_terminate_qlearn = False
 
 # Gym instance
-env = gym.make('CarRacing-v0')
+env = gym.make('CarRacingBostHennenQLearn-v0')
 
 # Environment properties
 observation_space_size = np.prod(env.observation_space.nvec)
@@ -71,7 +71,7 @@ def export_qtable(episode_num, episode_tiles_per_iter_list, tiles_visited_list, 
         if Q_BACKUPS:
             backup_file = f'q_backups\\{EXPERIMENT}_ep{episode_num}_q1.gz'
             backup_path = os.path.join(cur_path, backup_file)
-            if exists(backup_path): 
+            if exists(backup_path):
                 os.remove(backup_path)
             copyfile(q1_path, backup_path)
 
@@ -136,11 +136,11 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
     # Initial state is determined by environment
     current_state = env.reset()
     iteration_ctr = 0
-    
+
     tiles_visited_list = []
     tiles_per_iter = 0
     current_average_reward = 0
-    
+
     # Repeat until max iterations have passed or agent reaches terminal state
     while not do_terminate_qlearn and iteration_ctr <= max_iterations:
 
@@ -149,11 +149,11 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
         selected_action_index = policy(current_state_index, q_table)
         selected_action = np.unravel_index(
             selected_action_index, env.action_space.nvec)
-        
-        
+
+
         # Perform action, update state
         next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(selected_action)
-        
+
         # Set gamma = 0 when terminal state reached to satisfy Q(s', . ) = 0
         if do_terminate_qlearn:
             gamma = 0
@@ -199,7 +199,7 @@ def double_expected_sarsa(reward, current_state_index, selected_action_index, ne
                     + gamma * expected_val
                     - q1_table[current_state_index, selected_action_index])
         q1_table[current_state_index, selected_action_index] += d_q
-    else: 
+    else:
         expected_val = expected_action_value(q1_table, next_state_index, greedy_policy, exponential_weights)
         d_q = alpha * (reward
                        + gamma * expected_val
@@ -352,6 +352,8 @@ if __name__ == "__main__":
                         actions[1] = 1
                     if k == key.DOWN:
                         actions[2] = 1
+                    if k == key.ESCAPE or k == key.SPACE:
+                        sys.exit(0)
 
                 def key_release(k, mod):
                     if k == key.LEFT and actions[0] == 1:
@@ -396,7 +398,7 @@ if __name__ == "__main__":
                 if "greedy" in sys.argv:
                     while True:
                         if double:
-                            tiles_visited_list, tiles_per_iter = do_policy_episode(double_greedy_policy, EPISODE_ITERATION_MAX, (q1_table, q2_table), render=True)     
+                            tiles_visited_list, tiles_per_iter = do_policy_episode(double_greedy_policy, EPISODE_ITERATION_MAX, (q1_table, q2_table), render=True)
                         else:
                             tiles_visited_list, tiles_per_iter = do_policy_episode(greedy_policy, EPISODE_ITERATION_MAX, q1_table, render=True)
                         do_terminate_qlearn = False
@@ -433,18 +435,18 @@ if __name__ == "__main__":
                                     greedy_policy, iterations, q1_table, render=show_user)
                             if not save_stats:
                                 tiles_visited_list = None
-                            print(f"{str_add}Greedy episode {episode} complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
+                            # print(f"{str_add}Greedy episode {episode} complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
                             do_terminate_qlearn = False
 
                         if export_qtable(episode, episode_tiles_per_iter_list, tiles_visited_list, double):
                             episode_tiles_per_iter_list = []
                             tiles_visited_list = None
-                        
+
                         print()
         except KeyboardInterrupt:
             sys.exit(0)
-        
 
-    
-    
+
+
+
 

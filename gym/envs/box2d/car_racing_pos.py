@@ -120,7 +120,7 @@ class FrictionDetector(contactListener):
             # print tile.road_friction, "DEL", len(obj.tiles) -- should delete to zero when on grass (this works)
 
 
-class CarRacing(gym.Env, EzPickle):
+class CarRacingPoS(gym.Env, EzPickle):
     metadata = {
         'render.modes': ['human', 'rgb_array', 'state_pixels'],
         'video.frames_per_second': FPS
@@ -516,7 +516,7 @@ class CarRacing(gym.Env, EzPickle):
             if abs(x) > PLAYFIELD or abs(y) > PLAYFIELD:
                 done = True
                 step_reward = -100
-        self.state = self.render('state_pixels')
+
         return self.state, step_reward, done, self.tile_visited_count
 
     def render(self, mode='human'):
