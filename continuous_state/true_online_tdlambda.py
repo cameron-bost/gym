@@ -49,7 +49,7 @@ def setup_controls():
     env.viewer.window.on_key_release = key_release
 
 
-def do_human(max_iterations, actions):
+def do_human(max_iterations, actions_human):
     global do_terminate_qlearn
     # Perform a run using the human
     env.reset()
@@ -65,7 +65,7 @@ def do_human(max_iterations, actions):
         env.render()
 
         # Perform action, update state
-        next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(actions)
+        next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(actions_human)
         iteration_ctr += 1
 
         # Update reward trackers, only use tile visited so that the reward function can be evaluated independently
