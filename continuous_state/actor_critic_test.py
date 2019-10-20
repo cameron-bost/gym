@@ -1,6 +1,6 @@
-# True online TD(lambda) implementation
-# Algorithm referenced from RL textbook p. 300
-# This is being ran on a modified state representation (see CarRacingPoS.py)
+# Actor-Critic implementation
+# Algorithm referenced from RL textbook p. 332 (PDF p. 354)
+# This is being ran on a modified state representation (see car_racing_pos.py)
 import sys
 import numpy as np
 import gym
@@ -93,5 +93,5 @@ if __name__ == "__main__":
                 do_terminate_qlearn = False
                 print(f"Human episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
         else:
-            # Online TD(lambda) mode
+            # Actor-Critic Mode
             pass
