@@ -22,7 +22,7 @@ q2_path = os.path.join(cur_path, q2_file)
 do_terminate_qlearn = False
 
 # Gym instance
-env = gym.make('CarRacingBostHennenQLearn-v0')
+env = gym.make('CarRacing5033Discrete-v0')
 
 # Environment properties
 observation_space_size = np.prod(env.observation_space.nvec)

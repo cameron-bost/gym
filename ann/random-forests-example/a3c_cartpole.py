@@ -41,9 +41,9 @@ class ActorCriticModel(keras.Model):
     super(ActorCriticModel, self).__init__()
     self.state_size = state_size
     self.action_size = action_size
-    self.dense1 = layers.Dense(100, activation='relu')
+    self.dense1 = layers.Dense(100, input_shape=(96,96), activation='relu')
     self.policy_logits = layers.Dense(action_size)
-    self.dense2 = layers.Dense(100, activation='relu')
+    self.dense2 = layers.Dense(100, input_shape=(96,96), activation='relu')
     self.values = layers.Dense(1)
 
   def call(self, inputs):
@@ -133,13 +133,14 @@ class MasterAgent():
       os.makedirs(save_dir)
 
     env = gym.make(self.game_name)
-    self.state_size = env.observation_space.shape[0]**2*env.observation_space.shape[2]
+    self.state_size = env.observation_space.shape[0]**2
     self.action_size = env.action_space.shape[0]
     self.opt = tf.train.AdamOptimizer(args.lr, use_locking=True)
     print(self.state_size, self.action_size)
 
     self.global_model = ActorCriticModel(self.state_size, self.action_size)  # global network
-    self.global_model(tf.convert_to_tensor(np.random.random((1, self.state_size)), dtype=tf.float32))
+    random_tensor = tf.convert_to_tensor(np.random.random((1, self.state_size)), dtype=tf.float32)
+    self.global_model(random_tensor)
 
   def train(self):
     if args.algorithm == 'random':
@@ -177,7 +178,7 @@ class MasterAgent():
     plt.show()
 
   def play(self):
-    env = gym.make(self.game_name).unwrapped
+    env = gym.make(self.game_name)
     state = env.reset()
     model = self.global_model
     model_path = os.path.join(self.save_dir, 'model_{}.h5'.format(self.game_name))
@@ -190,10 +191,13 @@ class MasterAgent():
 
     try:
       while not done:
-        env.render(mode='rgb_array')
-        policy, value = model(tf.convert_to_tensor(state[None, :], dtype=tf.float32))
+        env.render(mode='state_pixels')
+        green_state = state[:,:,1]
+        tensor=tf.convert_to_tensor(state, dtype=tf.float32)
+        green_tensor = tf.convert_to_tensor(green_state, dtype=tf.float32)
+        policy, value = model(green_tensor)
         policy = tf.nn.softmax(policy)
-        action = np.argmax(policy)
+        action = policy[0] # np.argmax(policy)
         state, reward, done, _ = env.step(action)
         reward_sum += reward
         print("{}. Reward: {}, action: {}".format(step_counter, reward_sum, action))

@@ -130,8 +130,15 @@ register(
 )
 
 register(
-    id='CarRacingBostHennenQLearn-v0',
+    id='CarRacing5033Discrete-v0',
     entry_point='gym.envs.box2d:CarRacingPoS',
+    max_episode_steps=999999,
+    reward_threshold=900,
+)
+
+register(
+    id='CarRacing5033ContinuousState-v0',
+    entry_point='gym.envs.box2d:CarRacingPoSContinuousState',
     max_episode_steps=999999,
     reward_threshold=900,
 )
