@@ -1052,7 +1052,7 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
         joint_angle = np.clip(joint.angle, joint.lowerLimit, joint.upperLimit)
         steer_state = joint_angle
         # ###CONT### ###STATE###
-        self.state = (speed_state,) + tuple(raycast_dist_state) + (steer_state,)
+        self.state = (speed_state,) + (steer_state,) + tuple(raycast_dist_state)
 
         step_reward = 0
         done = False
