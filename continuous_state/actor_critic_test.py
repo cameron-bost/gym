@@ -25,9 +25,10 @@ COMBO_DIMENSION = None
 """
 Results Constants
 """
-FILE_NAME_VALUE_WEIGHTS = "value_weights.gz"
-FILE_NAME_POLICY_WEIGHTS = "policy_weights.gz"
-DIRECTORY_WEIGHT_BACKUP = "weight_backups"
+cur_path = os.path.dirname(__file__)
+FILE_NAME_VALUE_WEIGHTS = os.path.join(cur_path, "value_weights.gz")
+FILE_NAME_POLICY_WEIGHTS = os.path.join(cur_path, "policy_weights.gz")
+DIRECTORY_WEIGHT_BACKUP = os.path.join(cur_path, "weight_backups")
 
 # Gym instance
 env = gym.make('CarRacing5033ContinuousState-v0')
@@ -157,7 +158,7 @@ def get_feature_vectors(s):
             if action not in policy_vector_dict:
                 policy_vector_dict[action] = []
             policy_vector_dict[action].extend(policy_vec_dict[action])
-    return policy_vector_dict, t_value_vector
+    return policy_vector_dict, np.array(t_value_vector)
 
 
 # h(s, a, theta) = theta^T * X(s, a) in algorithm
@@ -182,14 +183,15 @@ def value(weights, v_vector):
     return np.dot(weights, v_vector)
 
 
-def grad_policy(action, policy_fv_dict, state, theta):
-    expected_values = [policy(action_i, state, theta) *
-                       np.array(policy_fv_dict(state, action_i)) for action_i in ACTIONS]
+def grad_policy(action, policy_fv_dict, theta):
+    expected_values = [policy(action_i, theta, policy_fv_dict) *
+                       np.array(policy_fv_dict[action_i]) for action_i in ACTIONS]
     summed_array = expected_values[0]
     for val in expected_values[1:]:
         summed_array += val
     gradient = np.array(policy_fv_dict[action]) - summed_array
     return gradient
+
 
 # Generates binary tuple of size {size} from input {n}
 # Note: Output is already reversed
@@ -261,6 +263,46 @@ def init_weight_vectors():
     return policy_weights, value_weights
 
 
+def do_actor_critic_episode(theta_weights, value_weights):
+    # Init episode fields
+    global do_terminate
+    do_terminate = False
+    current_state = env.reset()
+    gamma = DEFAULT_GAMMA
+    learning_rate_value_weights = 0.1  # Note: alpha_w
+    learning_rate_policy_weights = 0.1  # Note: alpha_theta
+    gamma_accumulator = 1  # Note: "I" in algorithm
+    iteration = 1
+    value_vector = None
+    policy_features_dict = None
+    tile_visited_count = 0
+    while not do_terminate and iteration < EPISODE_MAX_ITERATIONS:
+        if value_vector is None and policy_features_dict is None:
+            (policy_features_dict, value_vector) = get_feature_vectors(current_state)
+
+        selected_action = get_action_from_policy(theta_weights, policy_features_dict)
+
+        next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
+
+        if do_terminate:
+            gamma = 0
+        (policy_features_dict, next_value_vector) = get_feature_vectors(current_state)
+        dell = reward + gamma * value(value_weights, next_value_vector) - value(value_weights, value_vector)
+
+        value_weights = learning_rate_value_weights * dell * np.array(value_vector)  # TODO check if this should be dell * x
+
+        policy_gradient = grad_policy(selected_action, policy_features_dict, theta_weights)
+        theta_weights += learning_rate_policy_weights * gamma_accumulator * dell * policy_gradient
+
+        gamma_accumulator *= gamma
+        current_state = next_state
+        value_vector = next_value_vector
+        iteration += 1
+        # End Actor-Critic iteration
+    return theta_weights, value_weights, tile_visited_count
+    # End Actor-Critic episode
+
+
 # Main code
 do_terminate = False
 if __name__ == "__main__":
@@ -279,37 +321,9 @@ if __name__ == "__main__":
             # Load weight vectors
             (theta_weights, value_weights) = init_weight_vectors()
             for episode_num in range(MAX_EPISODES):
-                # Init episode fields
-                current_state = env.reset()
-                gamma = DEFAULT_GAMMA
-                learning_rate_value_weights = 0     # Note: alpha_w
-                learning_rate_policy_weights = 0    # Note: alpha_theta
-                gamma_accumulator = 1               # Note: "I" in algorithm
-                iteration = 1
-                value_vector = None
-                policy_features_dict = None
-                while not do_terminate and iteration < EPISODE_MAX_ITERATIONS:
-                    if value_vector is None and policy_features_dict is None:
-                        (policy_features_dict, value_vector) = get_feature_vectors(current_state)
-
-                    selected_action = get_action_from_policy(theta_weights, policy_features_dict)
-
-                    next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
-
-                    if do_terminate:
-                        gamma = 0
-                    (policy_features_dict, next_value_vector) = get_feature_vectors(current_state)
-                    dell = reward + gamma * value(value_weights, next_value_vector) - value(value_weights, value_vector)
-
-                    value_weights += learning_rate_value_weights * dell * value_vector  # TODO check if this should be dell * x
-
-                    policy_gradient = grad_policy(selected_action, policy_features_dict, current_state, theta_weights)
-                    theta_weights += learning_rate_policy_weights * gamma_accumulator * dell * policy_gradient
-
-                    gamma_accumulator *= gamma
-                    current_state = next_state
-                    value_vector = next_value_vector
-                    iteration += 1
-                    # End Actor-Critic iteration
-                # End Actor-Critic episode
+                theta_weights, value_weights, tiles_visited = do_actor_critic_episode(theta_weights=theta_weights,
+                                                                                      value_weights=value_weights)
+                print(f"Episode {episode_num}: {tiles_visited} tiles")
+                np.savetxt(FILE_NAME_POLICY_WEIGHTS, theta_weights)
+                np.savetxt(FILE_NAME_VALUE_WEIGHTS, value_weights)
             # End Actor-Critic "else" block
