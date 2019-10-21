@@ -1,16 +1,30 @@
 # Actor-Critic implementation
 # Algorithm referenced from RL textbook p. 332 (PDF p. 354)
 # This is being ran on a modified state representation (see car_racing_pos.py)
+import os
 import sys
 import numpy as np
 import gym
 
 """
-Learning Constants
+Learning Parameters
 """
-
+MAX_EPISODES = 20000
 EPISODE_MAX_ITERATIONS = 5000    # Max number of iterations in one episode
 DEFAULT_GAMMA = 0.9
+
+"""
+Model Constants
+"""
+ACTIONS = None
+ACTION_COMBO_COEFFICIENTS = None
+
+"""
+Results Constants
+"""
+FILE_NAME_VALUE_WEIGHTS = "value_weights.gz"
+FILE_NAME_POLICY_WEIGHTS = "policy_weights.gz"
+DIRECTORY_WEIGHT_BACKUP = "weight_backups"
 
 # Gym instance
 env = gym.make('CarRacing5033ContinuousState-v0')
@@ -81,11 +95,10 @@ def do_human(max_iterations, actions_human):
     return tiles_visited_list_human, tiles_per_iter_human
 
 
-ACTIONS = []
-ACTION_COMBOS = []
-
-
-class Feature:
+# A feature X that receives state as input when evaluating.
+# Upon evaluation, this will return the state feature value (used as x(s)) as well as all possible policy feature
+# values.
+class StateFeature:
     def __init__(self, exps):
         self.exps = exps
         self.state_value = 0
@@ -96,7 +109,7 @@ class Feature:
         self.action_values = {}
         for a in ACTIONS:
             action_combo_values = []
-            for combo in ACTION_COMBOS:
+            for combo in ACTION_COMBO_COEFFICIENTS:
                 action_combo_value = np.prod([a[i]*combo[i] for i in range(len(combo))])
                 action_combo_values.append(action_combo_value)
             self.action_values[a] = action_combo_values
@@ -145,6 +158,74 @@ def grad_policy(action, state, theta, policy_vector):
     pass
 
 
+# Generates binary tuple of size {size} from input {n}
+# Note: Output is already reversed
+def to_binary_tuple(n, size):
+    ret = [0] * size
+    for i in range(size):
+        ret[size - (i+1)] = n % 2
+        n = int(n/2)
+    return ret
+
+
+# Generates all possible action tuples from multi-discrete space
+# TODO make modular, generators are hard
+def gen_action_values(action_space_values):
+    global ACTIONS
+    if ACTIONS is None:
+        ACTIONS = []
+        for action1 in action_space_values[0]:
+            for action2 in action_space_values[1]:
+                for action3 in action_space_values[2]:
+                    this_tuple = [action1, action2, action3]
+                    ACTIONS.append(this_tuple)
+    return ACTIONS
+
+
+def gen_action_coefficients():
+    global env, ACTIONS, ACTION_COMBO_COEFFICIENTS
+    if ACTION_COMBO_COEFFICIENTS is None:
+        action_n = int(np.prod(env.action_space.nvec))
+        action_space = env.action_space
+        action_dimension = len(action_space.nvec)
+        action_values = gen_action_values(env.action_space_values)
+        combo_dimension = 2**action_dimension
+        ACTION_COMBO_COEFFICIENTS = []
+        combos = [to_binary_tuple(i, action_dimension) for i in range(combo_dimension)]
+        for action_tuple_idx in range(action_n):
+            action_value_tuple = action_values[action_tuple_idx]
+            action_value_coefficient_set = []
+            for combo_idx in range(combo_dimension):
+                combo = combos[combo_idx]
+                action_combo_value = 1
+                for action_idx in range(action_dimension):
+                    a = action_value_tuple[action_idx]
+                    e = combo[action_idx]
+                    action_combo_value *= a**e
+                action_value_coefficient_set.append(action_combo_value)
+            ACTION_COMBO_COEFFICIENTS.append(action_value_coefficient_set)
+
+
+def init_policy_weights():
+    pass
+
+
+def init_value_weights():
+    pass
+
+
+def init_weight_vectors():
+    if not os.path.exists(FILE_NAME_POLICY_WEIGHTS):
+        policy_weights = init_policy_weights()
+    else:
+        policy_weights = np.loadtxt(FILE_NAME_POLICY_WEIGHTS, dtype=float)
+    if not os.path.exists(FILE_NAME_VALUE_WEIGHTS):
+        value_weights = init_value_weights()
+    else:
+        value_weights = np.loadtxt(FILE_NAME_VALUE_WEIGHTS, dtype=float)
+    return policy_weights, value_weights
+
+
 # Main code
 do_terminate = False
 if __name__ == "__main__":
@@ -157,36 +238,38 @@ if __name__ == "__main__":
                 tiles_visited_list, tiles_per_iter = do_human(EPISODE_MAX_ITERATIONS, actions)
                 do_terminate = False
                 print(f"Human episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
-        else:
-            # Actor-Critic Mode
-            # TODO for each episode:
-            # Init episode fields
-            current_state = env.reset() # Note: initial value
-            theta_weights = []
-            value_weights = []
-            gamma = DEFAULT_GAMMA
-            learning_rate_value_weights = 0 # Note: alpha_w
-            learning_rate_policy_weights = 0 # Note: alpha_theta
-            gamma_accumulator = 1   # Note: "I" in algorithm
+        else:  # Actor-Critic Mode
+            # Generate action table
+            gen_action_coefficients()
+            # Load weight vectors
+            (theta_weights, value_weights) = init_weight_vectors()
+            for episode_num in range(MAX_EPISODES):
+                # Init episode fields
+                current_state = env.reset()
+                gamma = DEFAULT_GAMMA
+                learning_rate_value_weights = 0     # Note: alpha_w
+                learning_rate_policy_weights = 0    # Note: alpha_theta
+                gamma_accumulator = 1               # Note: "I" in algorithm
+                iteration = 1
+                while not do_terminate and iteration < EPISODE_MAX_ITERATIONS:
+                    (policy_vector, value_vector) = get_feature_vectors(current_state)
 
-            # TODO while not do_terminate and iteration < MAX_ITERATIONS
-            (policy_vector, value_vector) = get_feature_vectors(current_state)
+                    selected_action = get_action_from_policy(current_state, theta_weights)
 
-            selected_action = get_action_from_policy(current_state, theta_weights)
+                    next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
 
-            next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
+                    if do_terminate:
+                        gamma = 0
+                    dell = reward + gamma*value(next_state, value_weights) - value(current_state, value_weights)
 
-            if do_terminate:
-                gamma = 0
-            dell = reward + gamma*value(next_state, value_weights) - value(current_state, value_weights)
+                    value_weights += learning_rate_value_weights * dell * value_vector  # TODO check if this should be dell * x
 
-            value_weights += learning_rate_value_weights * dell * value_vector  # TODO check if this should be dell * x
+                    policy_gradient = grad_policy(selected_action, current_state, theta_weights)
+                    theta_weights += learning_rate_policy_weights * gamma_accumulator * dell * policy_gradient
 
-            policy_gradient = grad_policy(selected_action, current_state, theta_weights)
-            theta_weights += learning_rate_policy_weights * gamma_accumulator * dell * policy_gradient
-
-            gamma_accumulator *= gamma
-            current_state = next_state
-            # End Actor-Critic iteration
-            # End Actor-Critic episode
+                    gamma_accumulator *= gamma
+                    current_state = next_state
+                    iteration += 1
+                    # End Actor-Critic iteration
+                # End Actor-Critic episode
             # End Actor-Critic "else" block

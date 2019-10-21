@@ -815,14 +815,14 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
         3) Brake: Discrete 2  - NOOP[0], Brake[1] - params: min: 0, max: 1
 
         Observation Space (continuous):
-        1) Speed: float32 (0-100)
+        1) Speed: float32       (0-100)
         2) Sensors: NUM_SENSORS (0 - 20)
-        3) Wheel off or not ( for each wheel): 2
-        4) Steering: (-0.4 - +0.4))
+        3) Steering:            (-0.4 - +0.4))
 
         """
         # ###CONT### ###CONSTRUCTOR###
         self.action_space = spaces.MultiDiscrete([3, 2, 2])
+        self.action_space_values = [[0, 1, 2], [0, 1], [0, 1]]
         self.observation_space = spaces.Box(low=np.array([MIN_SPEED] + [0.]*NUM_SENSORS + [STEER_MIN]),
                                             high=np.array([MAX_SPEED] + [RAY_CAST_DISTANCE]*NUM_SENSORS + [STEER_MAX]),
                                             dtype=np.float32)
