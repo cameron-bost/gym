@@ -17,7 +17,7 @@ DEFAULT_GAMMA = 0.9
 Model Constants
 """
 ACTIONS = None
-ACTION_COMBO_COEFFICIENTS = None
+ACTION_COMBO_COEFFICIENTS = None    # Note: get [a_i][e_i], a_i in range(len(ACTIONS)), e_i in range(2**len(ACTIONS[0]))
 
 """
 Results Constants
@@ -105,21 +105,45 @@ class StateFeature:
         self.action_values = {}
 
     def eval(self, state):
-        self.state_value = 0  # TODO product(state_i ^ exps_i for i)
+        self.state_value = float(np.prod(state[i]**self.exps[i] for i in range(len(state))))
         self.action_values = {}
+        action_idx = 0
         for a in ACTIONS:
             action_combo_values = []
-            for combo in ACTION_COMBO_COEFFICIENTS:
-                action_combo_value = np.prod([a[i]*combo[i] for i in range(len(combo))])
+            for exp_combo in ACTION_COMBO_COEFFICIENTS[action_idx]:
+                action_combo_value = np.prod([a[i]*exp_combo[i] for i in range(len(exp_combo))])
                 action_combo_values.append(action_combo_value)
             self.action_values[a] = action_combo_values
+            action_idx += 1
         return self.state_value, self.action_values
 
     def eval_action(self, a):
         return self.action_values[a]
 
 
-# Obtains x(s,a) - feature vector
+# Hand-picked State Feature Vectors
+# STATE =   {s0,s1,RAYS}, s0 = speed, s1 = steer_angle
+# RAYS =    {r0,r1,..,r4}
+# X(S) =    {1, s0, s1, r0, .., r4,
+#           s0*r0, s0*r1, .., s0*r4,
+#           s1*r0, s1*r1, .., s1*r4}
+STATE_FEATURES = [StateFeature(exps=[0, 0, 0, 0, 0, 0, 0]), StateFeature(exps=[1, 0, 0, 0, 0, 0, 0]),
+                  StateFeature(exps=[0, 1, 0, 0, 0, 0, 0]),
+                  # RAYS
+                  StateFeature(exps=[0, 0, 1, 0, 0, 0, 0]), StateFeature(exps=[0, 0, 0, 1, 0, 0, 0]),
+                  StateFeature(exps=[0, 0, 0, 0, 1, 0, 0]), StateFeature(exps=[0, 0, 0, 0, 0, 1, 0]),
+                  StateFeature(exps=[0, 0, 0, 0, 0, 0, 1]),
+                  # s0 * RAYS
+                  StateFeature(exps=[1, 0, 1, 0, 0, 0, 0]), StateFeature(exps=[1, 0, 0, 1, 0, 0, 0]),
+                  StateFeature(exps=[1, 0, 0, 0, 1, 0, 0]), StateFeature(exps=[1, 0, 0, 0, 0, 1, 0]),
+                  StateFeature(exps=[1, 0, 0, 0, 0, 0, 1]),
+                  # s1 * RAYS
+                  StateFeature(exps=[0, 1, 1, 0, 0, 0, 0]), StateFeature(exps=[0, 1, 0, 1, 0, 0, 0]),
+                  StateFeature(exps=[0, 1, 0, 0, 1, 0, 0]), StateFeature(exps=[0, 1, 0, 0, 0, 1, 0]),
+                  StateFeature(exps=[0, 1, 0, 0, 0, 0, 1])]
+
+
+# Obtains x(s,a) (feature vector values) for a specific state, action
 # s - current state
 # a - value for each action variable (e.g. [0, 1, 0] for go forward)
 def get_feature_vectors(s, a):
@@ -143,7 +167,7 @@ def policy(action, state, theta, policy_vector):
     pass
 
 
-def get_action_from_policy(current_state, theta, policy_vector):
+def get_action_from_policy(state, theta, policy_vector):
     # TODO choose_action([policy(state, action_i, theta) for action_i in ACTIONS])
     pass
 
@@ -182,6 +206,7 @@ def gen_action_values(action_space_values):
     return ACTIONS
 
 
+# Generates ACTION_COMBO_COEFFICIENTS, if it hasn't already been done
 def gen_action_coefficients():
     global env, ACTIONS, ACTION_COMBO_COEFFICIENTS
     if ACTION_COMBO_COEFFICIENTS is None:
@@ -206,10 +231,12 @@ def gen_action_coefficients():
             ACTION_COMBO_COEFFICIENTS.append(action_value_coefficient_set)
 
 
+# TODO init policy weights (0 or uniform?)
 def init_policy_weights():
     pass
 
 
+# TODO init value weights (0 or uniform?)
 def init_value_weights():
     pass
 
