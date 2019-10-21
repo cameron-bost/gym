@@ -19,7 +19,7 @@ q2_file = f'{EXPERIMENT}_q2.gz'
 q2_path = os.path.join(cur_path, q2_file)
 
 # Flag for indicating when program should terminate
-do_terminate_qlearn = False
+do_terminate = False
 
 # Gym instance
 env = gym.make('CarRacing5033Discrete-v0')
@@ -132,7 +132,7 @@ def init_q_tables(double):
 
 
 def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamma, q_table, alpha):
-    global do_terminate_qlearn
+    global do_terminate
     # Initial state is determined by environment
     current_state = env.reset()
     iteration_ctr = 0
@@ -258,7 +258,7 @@ def exponential_weights(current_state_index, policy, q_table):
 
 
 def do_policy_episode(policy, max_iterations, q_table, render):
-    global do_terminate_qlearn
+    global do_terminate
     # Perform a run using the given policy, but don't update q table.
     # Initial state is determined by environment
     current_state = env.reset()
@@ -301,7 +301,7 @@ def do_policy_episode(policy, max_iterations, q_table, render):
 
 
 def do_human(max_iterations, actions):
-    global do_terminate_qlearn
+    global do_terminate
     # Perform a run using the human
     current_state = env.reset()
     iteration_ctr = 0
@@ -369,7 +369,7 @@ if __name__ == "__main__":
                 env.viewer.window.on_key_release = key_release
                 while True:
                     tiles_visited_list, tiles_per_iter = do_human(EPISODE_ITERATION_MAX, actions)
-                    do_terminate_qlearn = False
+                    do_terminate = False
                     print(f"Human episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
             else:
                 double = "double" in sys.argv
@@ -401,7 +401,7 @@ if __name__ == "__main__":
                             tiles_visited_list, tiles_per_iter = do_policy_episode(double_greedy_policy, EPISODE_ITERATION_MAX, (q1_table, q2_table), render=True)
                         else:
                             tiles_visited_list, tiles_per_iter = do_policy_episode(greedy_policy, EPISODE_ITERATION_MAX, q1_table, render=True)
-                        do_terminate_qlearn = False
+                        do_terminate = False
                         print(f"{str_add}Greedy episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
                 elif "learn" in sys.argv:
                     for episode in range(START_EPISODE, NUM_EPISODES):
@@ -420,7 +420,7 @@ if __name__ == "__main__":
                                 episode, exponential_explore_policy, expected_sarsa, iterations, gamma, q1_table, alpha)
                         iters_complete = len(tiles_visited_list)
                         tiles_visited_list = None # Don't save stats for non-greedy policy runs
-                        do_terminate_qlearn = False
+                        do_terminate = False
                         episode_tiles_per_iter_list.append(tiles_per_iter)
 
                         show_user = episode > 0 and VIEW_INTERVAL > 0 and episode % VIEW_INTERVAL == 0
@@ -436,7 +436,7 @@ if __name__ == "__main__":
                             if not save_stats:
                                 tiles_visited_list = None
                             # print(f"{str_add}Greedy episode {episode} complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
-                            do_terminate_qlearn = False
+                            do_terminate = False
 
                         if export_qtable(episode, episode_tiles_per_iter_list, tiles_visited_list, double):
                             episode_tiles_per_iter_list = []
