@@ -18,6 +18,7 @@ Model Constants
 """
 ACTIONS = None
 ACTION_COMBO_COEFFICIENTS = None    # Note: get [a_i][e_i], a_i in range(len(ACTIONS)), e_i in range(2**len(ACTIONS[0]))
+COMBO_DIMENSION = None
 
 """
 Results Constants
@@ -214,13 +215,13 @@ def gen_action_coefficients():
         action_space = env.action_space
         action_dimension = len(action_space.nvec)
         action_values = gen_action_values(env.action_space_values)
-        combo_dimension = 2**action_dimension
+        COMBO_DIMENSION = 2**action_dimension
         ACTION_COMBO_COEFFICIENTS = []
-        combos = [to_binary_tuple(i, action_dimension) for i in range(combo_dimension)]
+        combos = [to_binary_tuple(i, action_dimension) for i in range(COMBO_DIMENSION)]
         for action_tuple_idx in range(action_n):
             action_value_tuple = action_values[action_tuple_idx]
             action_value_coefficient_set = []
-            for combo_idx in range(combo_dimension):
+            for combo_idx in range(COMBO_DIMENSION):
                 combo = combos[combo_idx]
                 action_combo_value = 1
                 for action_idx in range(action_dimension):
@@ -233,12 +234,12 @@ def gen_action_coefficients():
 
 # TODO init policy weights (0 or uniform?)
 def init_policy_weights():
-    pass
+    np.zeros(len(STATE_FEATURES*COMBO_DIMENSION))
 
 
 # TODO init value weights (0 or uniform?)
 def init_value_weights():
-    pass
+    np.zeros(len(STATE_FEATURES))
 
 
 def init_weight_vectors():
