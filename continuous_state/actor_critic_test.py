@@ -5,6 +5,7 @@ import os
 import sys
 import numpy as np
 import gym
+import random 
 
 """
 Learning Parameters
@@ -158,20 +159,21 @@ def get_feature_vectors(s):
     return policy_vector_dict, t_value_vector
 
 
-def numerical_preference_h(state, action, theta, policy_vector):
+def numerical_preference_h(action, theta, policy_vector):
     # TODO np.dot(theta, get_feature_vector(state, action))
     pass
 
 
-def policy(action, state, theta, policy_vector):
+def policy(action, theta, policy_vector):
     # TODO numerator = e^numerical_preference_h(state, action, theta)
     # denom = sum([e^numerical_preference_h(state, action_i, theta) for action_i in ACTIONS])
     pass
 
 
-def get_action_from_policy(state, theta, policy_vector):
-    # TODO choose_action([policy(state, action_i, theta) for action_i in ACTIONS])
-    pass
+def get_action_from_policy(theta, policy_vector):
+    weights = [policy(action, theta, policy_vector) for action in ACTIONS]
+    chosen_action = random.choices(population=ACTIONS, weights=weights)[0]
+    return chosen_action
 
 
 def value(state, weights, value_vector):
@@ -232,13 +234,11 @@ def gen_action_coefficients():
                 action_value_coefficient_set.append(action_combo_value)
             ACTION_COMBO_COEFFICIENTS.append(action_value_coefficient_set)
 
-
-# TODO init policy weights (0 or uniform?)
+# TODO Non-zero weights?
 def init_policy_weights():
     np.zeros(len(STATE_FEATURES*COMBO_DIMENSION))
 
 
-# TODO init value weights (0 or uniform?)
 def init_value_weights():
     np.zeros(len(STATE_FEATURES))
 
