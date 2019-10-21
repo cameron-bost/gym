@@ -1,6 +1,7 @@
 # Actor-Critic implementation
 # Algorithm referenced from RL textbook p. 332 (PDF p. 354)
 # This is being ran on a modified state representation (see car_racing_pos.py)
+import math
 import os
 import sys
 import numpy as np
@@ -158,19 +159,19 @@ def get_feature_vectors(s):
     return policy_vector_dict, t_value_vector
 
 
-def numerical_preference_h(state, action, theta, policy_vector):
-    # TODO np.dot(theta, get_feature_vector(state, action))
-    pass
+# h(s, a, theta) = theta^T * X(s, a) in algorithm
+def numerical_preference_h(action, theta, policy_fv_dict):
+    return np.dot(theta, policy_fv_dict[action])
 
 
-def policy(action, state, theta, policy_vector):
-    # TODO numerator = e^numerical_preference_h(state, action, theta)
-    # denom = sum([e^numerical_preference_h(state, action_i, theta) for action_i in ACTIONS])
-    pass
+def policy(action, theta, policy_fv_dict):
+    numerator = math.e**numerical_preference_h(action, theta, policy_fv_dict)
+    denominator = sum([math.e**numerical_preference_h(action_i, theta, policy_fv_dict) for action_i in ACTIONS])
+    return numerator/denominator
 
 
-def get_action_from_policy(state, theta, policy_vector):
-    # TODO choose_action([policy(state, action_i, theta) for action_i in ACTIONS])
+def get_action_from_policy(theta, policy_fv_dict):
+    # TODO choose_action([policy(action_i, theta) for action_i in ACTIONS])
     pass
 
 
@@ -210,7 +211,7 @@ def gen_action_values(action_space_values):
 
 # Generates ACTION_COMBO_COEFFICIENTS, if it hasn't already been done
 def gen_action_coefficients():
-    global env, ACTIONS, ACTION_COMBO_COEFFICIENTS
+    global env, ACTIONS, ACTION_COMBO_COEFFICIENTS, COMBO_DIMENSION
     if ACTION_COMBO_COEFFICIENTS is None:
         action_n = int(np.prod(env.action_space.nvec))
         action_space = env.action_space
@@ -235,12 +236,12 @@ def gen_action_coefficients():
 
 # TODO init policy weights (0 or uniform?)
 def init_policy_weights():
-    np.zeros(len(STATE_FEATURES*COMBO_DIMENSION))
+    return np.zeros(len(STATE_FEATURES)*COMBO_DIMENSION)
 
 
 # TODO init value weights (0 or uniform?)
 def init_value_weights():
-    np.zeros(len(STATE_FEATURES))
+    return np.zeros(len(STATE_FEATURES))
 
 
 def init_weight_vectors():
@@ -281,9 +282,9 @@ if __name__ == "__main__":
                 gamma_accumulator = 1               # Note: "I" in algorithm
                 iteration = 1
                 while not do_terminate and iteration < EPISODE_MAX_ITERATIONS:
-                    (policy_vector, value_vector) = get_feature_vectors(current_state)
+                    (policy_features_dict, value_vector) = get_feature_vectors(current_state)
 
-                    selected_action = get_action_from_policy(current_state, theta_weights)
+                    selected_action = get_action_from_policy(theta_weights, policy_features_dict)
 
                     next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
 
