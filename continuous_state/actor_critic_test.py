@@ -105,16 +105,14 @@ class StateFeature:
         self.action_values = {}
 
     def eval(self, state):
-        self.state_value = float(np.prod(state[i]**self.exps[i] for i in range(len(state))))
+        self.state_value = float(np.prod([state[i]**self.exps[i] for i in range(len(state))]))
         self.action_values = {}
-        action_idx = 0
-        for a in ACTIONS:
+        for action_idx, action in enumerate(ACTIONS):
             action_combo_values = []
-            for exp_combo in ACTION_COMBO_COEFFICIENTS[action_idx]:
-                action_combo_value = np.prod([a[i]*exp_combo[i] for i in range(len(exp_combo))])
+            for exp_combo_coefficient in ACTION_COMBO_COEFFICIENTS[action_idx]:
+                action_combo_value = self.state_value * exp_combo_coefficient
                 action_combo_values.append(action_combo_value)
-            self.action_values[a] = action_combo_values
-            action_idx += 1
+            self.action_values[action] = action_combo_values
         return self.state_value, self.action_values
 
     def eval_action(self, a):
@@ -146,14 +144,17 @@ STATE_FEATURES = [StateFeature(exps=[0, 0, 0, 0, 0, 0, 0]), StateFeature(exps=[1
 # Obtains x(s,a) (feature vector values) for a specific state, action
 # s - current state
 # a - value for each action variable (e.g. [0, 1, 0] for go forward)
-def get_feature_vectors(s, a):
-    # TODO state_action_tuple = s+a
-    # for each feature f in policy_features:
-    #   policy_vector.append(f.eval(state_action_tuple))
-    # for each feature f in value_features:
-    #   value_vector.append(f.eval(s))
-    # return (policy_vector, value_vector)
-    pass
+def get_feature_vectors(s):
+    policy_vector_dict = {}
+    t_value_vector = []
+    for state_feature in STATE_FEATURES:
+        feature_value, policy_vec_dict = state_feature.eval(s)
+        t_value_vector.append(feature_value)
+        for action in ACTIONS:
+            if action not in policy_vector_dict:
+                policy_vector_dict[action] = []
+            policy_vector_dict[action].extend(policy_vec_dict[action])
+    return policy_vector_dict, t_value_vector
 
 
 def numerical_preference_h(state, action, theta, policy_vector):
@@ -201,7 +202,7 @@ def gen_action_values(action_space_values):
         for action1 in action_space_values[0]:
             for action2 in action_space_values[1]:
                 for action3 in action_space_values[2]:
-                    this_tuple = [action1, action2, action3]
+                    this_tuple = (action1, action2, action3)
                     ACTIONS.append(this_tuple)
     return ACTIONS
 
