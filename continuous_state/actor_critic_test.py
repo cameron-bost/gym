@@ -183,7 +183,8 @@ def value(weights, v_vector):
 
 
 def grad_policy(action, policy_fv_dict, state, theta):
-    expected_values = [policy(action, state, theta)*np.array(policy_fv_dict(state, action)) for action in ACTIONS]
+    expected_values = [policy(action_i, state, theta) *
+                       np.array(policy_fv_dict(state, action_i)) for action_i in ACTIONS]
     summed_array = expected_values[0]
     for val in expected_values[1:]:
         summed_array += val
@@ -302,7 +303,7 @@ if __name__ == "__main__":
 
                     value_weights += learning_rate_value_weights * dell * value_vector  # TODO check if this should be dell * x
 
-                    policy_gradient = grad_policy(selected_action, current_state, theta_weights)
+                    policy_gradient = grad_policy(selected_action, policy_features_dict, current_state, theta_weights)
                     theta_weights += learning_rate_policy_weights * gamma_accumulator * dell * policy_gradient
 
                     gamma_accumulator *= gamma
