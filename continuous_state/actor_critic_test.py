@@ -182,10 +182,13 @@ def value(weights, v_vector):
     return np.dot(weights, v_vector)
 
 
-def grad_policy(action, state, theta, policy_vector):
-    # TODO x(s,a) - sum([policy(action_i, state, theta)*policy_features(state, action_i) for action_i in ACTIONS])
-    pass
-
+def grad_policy(action, policy_fv_dict, state, theta):
+    expected_values = [policy(action, state, theta)*np.array(policy_fv_dict(state, action)) for action in ACTIONS]
+    summed_array = expected_values[0]
+    for val in expected_values[1:]:
+        summed_array += val
+    gradient = np.array(policy_fv_dict[action]) - summed_array
+    return gradient
 
 # Generates binary tuple of size {size} from input {n}
 # Note: Output is already reversed
