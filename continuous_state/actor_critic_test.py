@@ -282,8 +282,11 @@ if __name__ == "__main__":
                 learning_rate_policy_weights = 0    # Note: alpha_theta
                 gamma_accumulator = 1               # Note: "I" in algorithm
                 iteration = 1
+                value_vector = None
+                policy_features_dict = None
                 while not do_terminate and iteration < EPISODE_MAX_ITERATIONS:
-                    (policy_features_dict, value_vector) = get_feature_vectors(current_state)
+                    if value_vector is None and policy_features_dict is None:
+                        (policy_features_dict, value_vector) = get_feature_vectors(current_state)
 
                     selected_action = get_action_from_policy(theta_weights, policy_features_dict)
 
@@ -291,7 +294,8 @@ if __name__ == "__main__":
 
                     if do_terminate:
                         gamma = 0
-                    dell = reward + gamma * value(value_weights, value_vector) - value(value_weights, value_vector)
+                    (policy_features_dict, next_value_vector) = get_feature_vectors(current_state)
+                    dell = reward + gamma * value(value_weights, next_value_vector) - value(value_weights, value_vector)
 
                     value_weights += learning_rate_value_weights * dell * value_vector  # TODO check if this should be dell * x
 
@@ -300,6 +304,7 @@ if __name__ == "__main__":
 
                     gamma_accumulator *= gamma
                     current_state = next_state
+                    value_vector = next_value_vector
                     iteration += 1
                     # End Actor-Critic iteration
                 # End Actor-Critic episode
