@@ -170,14 +170,16 @@ def policy(action, theta, policy_fv_dict):
     denominator = sum([math.e**numerical_preference_h(action_i, theta, policy_fv_dict) for action_i in ACTIONS])
     return numerator/denominator
 
+
 def get_action_from_policy(theta, policy_vector):
     weights = [policy(action, theta, policy_vector) for action in ACTIONS]
     chosen_action = random.choices(population=ACTIONS, weights=weights)[0]
     return chosen_action
 
-def value(state, weights, value_vector):
-    # TODO v(s,w) = w^T * X(s) // transpose of weight vector * policy feature vector
-    pass
+
+# v(s,w) = w^T * X(s) // transpose of weight vector * policy feature vector
+def value(weights, v_vector):
+    return np.dot(weights, v_vector)
 
 
 def grad_policy(action, state, theta, policy_vector):
@@ -232,6 +234,7 @@ def gen_action_coefficients():
                     action_combo_value *= a**e
                 action_value_coefficient_set.append(action_combo_value)
             ACTION_COMBO_COEFFICIENTS.append(action_value_coefficient_set)
+
 
 # TODO Non-zero weights?
 def init_policy_weights():
@@ -288,7 +291,7 @@ if __name__ == "__main__":
 
                     if do_terminate:
                         gamma = 0
-                    dell = reward + gamma*value(next_state, value_weights) - value(current_state, value_weights)
+                    dell = reward + gamma * value(value_weights, value_vector) - value(value_weights, value_vector)
 
                     value_weights += learning_rate_value_weights * dell * value_vector  # TODO check if this should be dell * x
 
