@@ -54,7 +54,7 @@ STEER_INTERVALS = 3
 STEER_MAX = 0.4
 STEER_MIN = -0.4
 
-STEER_ACTION = {0: 0.0, 1: -1.0, 2: 1.0}
+STEER_ACTION = {0: 0.0, 1: -1.0, 2: 1.0, -1: 1.0}
 GAS_ACTION = {0: 0.0, 1: 1.0}
 BRAKE_ACTION = {0: 0.0, 1: 0.8}  # set 1.0 for wheels to block to zero rotation
 
@@ -822,9 +822,9 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
         """
         # ###CONT### ###CONSTRUCTOR###
         self.action_space = spaces.MultiDiscrete([3, 2, 2])
-        self.action_space_values = [[0, 1, 2], [0, 1], [0, 1]]
-        self.observation_space = spaces.Box(low=np.array([MIN_SPEED] + [0.]*NUM_SENSORS + [STEER_MIN]),
-                                            high=np.array([MAX_SPEED] + [RAY_CAST_DISTANCE]*NUM_SENSORS + [STEER_MAX]),
+        self.action_space_values = [[-1, 0, 1], [0, 1], [0, 1]]
+        self.observation_space = spaces.Box(low=np.array([MIN_SPEED] + [STEER_MIN] + [0.]*NUM_SENSORS),
+                                            high=np.array([MAX_SPEED] + [STEER_MAX] + [RAY_CAST_DISTANCE]*NUM_SENSORS),
                                             dtype=np.float32)
 
     def seed(self, seed=None):

@@ -26,12 +26,28 @@ COMBO_DIMENSION = None
 Results Constants
 """
 cur_path = os.path.dirname(__file__)
-FILE_NAME_VALUE_WEIGHTS = os.path.join(cur_path, "value_weights.gz")
-FILE_NAME_POLICY_WEIGHTS = os.path.join(cur_path, "policy_weights.gz")
+FILE_NAME_VALUE_WEIGHTS = os.path.join(cur_path, "value_weights.txt")
+FILE_NAME_POLICY_WEIGHTS = os.path.join(cur_path, "policy_weights.txt")
 DIRECTORY_WEIGHT_BACKUP = os.path.join(cur_path, "weight_backups")
 
 # Gym instance
 env = gym.make('CarRacing5033ContinuousState-v0')
+SHOW_GRAPHICS = False
+
+
+# State constants (copied from gym)
+RAY_CAST_DISTANCE = 20
+NUM_SENSORS = 5
+RAY_CAST_INTERVALS = 5
+
+DISTANCE_INTERVALS = 6
+SPEED_INTERVALS = 10  # Number of intervals to discretize speed state into
+MAX_SPEED = 100.
+MIN_SPEED = 0.
+
+STEER_INTERVALS = 3
+STEER_MAX = 0.4
+STEER_MIN = -0.4
 
 
 # Configures key listeners for gym window (allows human control of car)
@@ -263,30 +279,40 @@ def init_weight_vectors():
     return policy_weights, value_weights
 
 
+def normalize(state):
+    low = np.array([MIN_SPEED] + [STEER_MIN] + [0.] * NUM_SENSORS)
+    high = np.array([MAX_SPEED] + [STEER_MAX] + [RAY_CAST_DISTANCE] * NUM_SENSORS)
+    for i in range(len(low)):
+        state_range = (high[i]-low[i])
+        state[i] = state[i]/state_range
+    return tuple(state)
+
+
 def do_actor_critic_episode(theta_weights, value_weights):
     # Init episode fields
     global do_terminate
     do_terminate = False
     current_state = env.reset()
     gamma = DEFAULT_GAMMA
-    learning_rate_value_weights = 0.1  # Note: alpha_w
-    learning_rate_policy_weights = 0.1  # Note: alpha_theta
+    learning_rate_value_weights = 0.001  # Note: alpha_w
+    learning_rate_policy_weights = 0.002  # Note: alpha_theta
     gamma_accumulator = 1  # Note: "I" in algorithm
     iteration = 1
     value_vector = None
     policy_features_dict = None
     tile_visited_count = 0
     while not do_terminate and iteration < EPISODE_MAX_ITERATIONS:
+        if SHOW_GRAPHICS:
+            env.render()
         if value_vector is None and policy_features_dict is None:
             (policy_features_dict, value_vector) = get_feature_vectors(current_state)
 
         selected_action = get_action_from_policy(theta_weights, policy_features_dict)
-
         next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
-
+        next_state = normalize(list(next_state))
         if do_terminate:
             gamma = 0
-        (policy_features_dict, next_value_vector) = get_feature_vectors(current_state)
+        (policy_features_dict, next_value_vector) = get_feature_vectors(next_state)
         dell = reward + gamma * value(value_weights, next_value_vector) - value(value_weights, value_vector)
 
         value_weights = learning_rate_value_weights * dell * np.array(value_vector)  # TODO check if this should be dell * x
