@@ -12,8 +12,8 @@ import random
 Learning Parameters
 """
 MAX_EPISODES = 20000
-EPISODE_MAX_ITERATIONS = 5000    # Max number of iterations in one episode
-DEFAULT_GAMMA = 0.9
+EPISODE_MAX_ITERATIONS = 2000    # Max number of iterations in one episode
+DEFAULT_GAMMA = 0.99
 
 """
 Model Constants
@@ -228,8 +228,9 @@ def gen_action_values(action_space_values):
         for action1 in action_space_values[0]:
             for action2 in action_space_values[1]:
                 for action3 in action_space_values[2]:
-                    this_tuple = (action1, action2, action3)
-                    ACTIONS.append(this_tuple)
+                    for action4 in action_space_values[3]:
+                        this_tuple = (action1, action2, action3, action4)
+                        ACTIONS.append(this_tuple)
     return ACTIONS
 
 
@@ -293,6 +294,7 @@ def do_actor_critic_episode(theta_weights, value_weights):
     global do_terminate
     do_terminate = False
     current_state = env.reset()
+    current_state = normalize(list(current_state))
     gamma = DEFAULT_GAMMA
     learning_rate_value_weights = 0.001  # Note: alpha_w
     learning_rate_policy_weights = 0.002  # Note: alpha_theta

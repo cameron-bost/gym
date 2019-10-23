@@ -810,7 +810,8 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
 
         """
         Action Space:
-        1) Steer: Discrete 3  - NOOP[0], Left[1], Right[2] - params: min: 0, max: 2
+        1) Steer Left: Discrete 2  - NOOP[0], Turn[1] params: min: 0, max: 2
+        1) Steer Right: Discrete 2  - NOOP[0], Turn[1] params: min: 0, max: 2
         2) Gas: Discrete 2 - NOOP[0], Go[1] - params: min: 0, max: 1
         3) Brake: Discrete 2  - NOOP[0], Brake[1] - params: min: 0, max: 1
 
@@ -821,8 +822,8 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
 
         """
         # ###CONT### ###CONSTRUCTOR###
-        self.action_space = spaces.MultiDiscrete([3, 2, 2])
-        self.action_space_values = [[-1, 0, 1], [0, 1], [0, 1]]
+        self.action_space = spaces.MultiDiscrete([2, 2, 2, 2])
+        self.action_space_values = [[0, 1], [0, 1], [0, 1], [0, 1]]
         self.observation_space = spaces.Box(low=np.array([MIN_SPEED] + [STEER_MIN] + [0.]*NUM_SENSORS),
                                             high=np.array([MAX_SPEED] + [STEER_MAX] + [RAY_CAST_DISTANCE]*NUM_SENSORS),
                                             dtype=np.float32)
@@ -1019,9 +1020,9 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
 
     def step(self, action):
         if action is not None:
-            self.car.steer(-STEER_ACTION[action[0]])
-            self.car.gas(GAS_ACTION[action[1]])
-            self.car.brake(BRAKE_ACTION[action[2]])
+            self.car.steer(action[0] - action[1])
+            self.car.gas(GAS_ACTION[action[2]])
+            self.car.brake(BRAKE_ACTION[action[3]])
 
         self.car.step(1.0 / FPS)
         self.world.Step(1.0 / FPS, 6 * 30, 2 * 30)
