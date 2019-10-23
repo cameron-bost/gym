@@ -274,13 +274,14 @@ def init_weight_vectors():
     else:
         policy_weights = np.loadtxt(FILE_NAME_POLICY_WEIGHTS, dtype=float)
     if not os.path.exists(FILE_NAME_VALUE_WEIGHTS):
-        value_weights = init_value_weights()
+        initial_value_weights = init_value_weights()
     else:
-        value_weights = np.loadtxt(FILE_NAME_VALUE_WEIGHTS, dtype=float)
-    return policy_weights, value_weights
+        initial_value_weights = np.loadtxt(FILE_NAME_VALUE_WEIGHTS, dtype=float)
+    return policy_weights, initial_value_weights
 
 
 def normalize(state):
+    state = list(state)
     low = np.array([MIN_SPEED] + [STEER_MIN] + [0.] * NUM_SENSORS)
     high = np.array([MAX_SPEED] + [STEER_MAX] + [RAY_CAST_DISTANCE] * NUM_SENSORS)
     for i in range(len(low)):
@@ -289,12 +290,12 @@ def normalize(state):
     return tuple(state)
 
 
-def do_actor_critic_episode(theta_weights, value_weights):
+def do_actor_critic_episode(ac_theta_weights, ac_value_weights):
     # Init episode fields
     global do_terminate
     do_terminate = False
     current_state = env.reset()
-    current_state = normalize(list(current_state))
+    current_state = normalize(current_state)
     gamma = DEFAULT_GAMMA
     learning_rate_value_weights = 0.001  # Note: alpha_w
     learning_rate_policy_weights = 0.002  # Note: alpha_theta
@@ -309,25 +310,32 @@ def do_actor_critic_episode(theta_weights, value_weights):
         if value_vector is None and policy_features_dict is None:
             (policy_features_dict, value_vector) = get_feature_vectors(current_state)
 
-        selected_action = get_action_from_policy(theta_weights, policy_features_dict)
+        selected_action = get_action_from_policy(ac_theta_weights, policy_features_dict)
         next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
         next_state = normalize(list(next_state))
         if do_terminate:
             gamma = 0
         (policy_features_dict, next_value_vector) = get_feature_vectors(next_state)
-        dell = reward + gamma * value(value_weights, next_value_vector) - value(value_weights, value_vector)
+        # Note: TD A-C only
+        # dell = reward + gamma * value(ac_value_weights, next_value_vector) - value(ac_value_weights, value_vector)
 
-        value_weights = learning_rate_value_weights * dell * np.array(value_vector)  # TODO check if this should be dell * x
+        # Note: Advantage A-C
+        # Advantage Function
+        # A(s, a) = next_reward + gamma*V(next_state) - V(current_state)
+        dell = reward + gamma*(policy(selected_action, ac_theta_weights, policy_features_dict) - value(ac_value_weights, next_value_vector))
+        # print(f"Advantage:{dell}")
+        ac_value_weights += learning_rate_value_weights * dell * np.array(value_vector)  # TODO check if this should be dell * x
 
-        policy_gradient = grad_policy(selected_action, policy_features_dict, theta_weights)
-        theta_weights += learning_rate_policy_weights * gamma_accumulator * dell * policy_gradient
+        policy_gradient = grad_policy(selected_action, policy_features_dict, ac_theta_weights)
+        ac_theta_weights += learning_rate_policy_weights * gamma_accumulator * dell * policy_gradient
 
         gamma_accumulator *= gamma
         current_state = next_state
         value_vector = next_value_vector
         iteration += 1
         # End Actor-Critic iteration
-    return theta_weights, value_weights, tile_visited_count
+    print(f"Episode {episode_num}: {tile_visited_count} tiles; {iteration} iterations")
+    return ac_theta_weights, ac_value_weights, tile_visited_count
     # End Actor-Critic episode
 
 
@@ -351,7 +359,6 @@ if __name__ == "__main__":
             for episode_num in range(MAX_EPISODES):
                 theta_weights, value_weights, tiles_visited = do_actor_critic_episode(theta_weights=theta_weights,
                                                                                       value_weights=value_weights)
-                print(f"Episode {episode_num}: {tiles_visited} tiles")
                 np.savetxt(FILE_NAME_POLICY_WEIGHTS, theta_weights)
                 np.savetxt(FILE_NAME_VALUE_WEIGHTS, value_weights)
             # End Actor-Critic "else" block
