@@ -54,9 +54,8 @@ STEER_INTERVALS = 3
 STEER_MAX = 0.4
 STEER_MIN = -0.4
 
-STEER_ACTION = {0: 0.0, 1: -1.0, 2: 1.0, -1: 1.0}
-GAS_ACTION = {0: 0.0, 1: 1.0}
-BRAKE_ACTION = {0: 0.0, 1: 0.8}  # set 1.0 for wheels to block to zero rotation
+STEER_ACTION = {"straight": 0.0, "left": -1.0, "right": 1.0}
+GAS_ACTION = {"noop": 0.0, "gas": 1.0, "brake": 0.8} # set brake 1.0 for wheels to block to zero rotation
 
 STATE_W = 96  # less than Atari 160x192
 STATE_H = 96
@@ -363,8 +362,15 @@ class CarRacingPoS(gym.Env, EzPickle):
     def step(self, action):
         if action is not None:
             self.car.steer(-STEER_ACTION[action[0]])
-            self.car.gas(GAS_ACTION[action[1]])
-            self.car.brake(BRAKE_ACTION[action[2]])
+            if action[1] == "gas":
+                self.car.gas(GAS_ACTION[action[1]])
+                self.car.brake(0)
+            elif action[1] == "brake":
+                self.car.brake(GAS_ACTION[action[1]])
+                self.car.gas(0)
+            else:
+                self.car.gas(0)
+                self.car.brake(0)
 
         self.car.step(1.0 / FPS)
         self.world.Step(1.0 / FPS, 6 * 30, 2 * 30)
@@ -383,10 +389,10 @@ class CarRacingPoS(gym.Env, EzPickle):
         if action is not None:
             # Get raycast distances
             raycast_dist = self.get_raycast_points(close_tiles)
+            # print([f"{dist:.4f}" for dist in raycast_dist])
             raycast_dist_state = [int(dist // (RAY_CAST_DISTANCE / RAY_CAST_INTERVALS)) for dist in raycast_dist]
         else:
             raycast_dist_state = [RAY_CAST_INTERVALS - 1 for i in range(RAY_CAST_INTERVALS)]
-        # print(raycast_dist)
 
         left_wheel_off = 1 if min_left_distance > DISTANCE_INTERVALS else 0
         right_wheel_off = 1 if min_right_distance > DISTANCE_INTERVALS else 0
@@ -810,9 +816,8 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
 
         """
         Action Space:
-        1) Steer: Discrete 3  - NOOP[0], Left[1], Right[2] - params: min: 0, max: 2
-        2) Gas: Discrete 2 - NOOP[0], Go[1] - params: min: 0, max: 1
-        3) Brake: Discrete 2  - NOOP[0], Brake[1] - params: min: 0, max: 1
+        1) Steer: Discrete 3  - NOOP[1], Left[2], Right[3] - params: min: 0, max: 2
+        2) Gas: Discrete 2 - NOOP[1], Gas[2], Brake[3]- params: min: 0, max: 2
 
         Observation Space (continuous):
         1) Speed: float32       (0-100)
@@ -822,7 +827,7 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
         """
         # ###CONT### ###CONSTRUCTOR###
         self.action_space = spaces.MultiDiscrete([3, 2, 2])
-        self.action_space_values = [[-1, 0, 1], [0, 1], [0, 1]]
+        self.action_space_values = [["straight", "left", "right"], ["noop", "gas", "brake"]]
         self.observation_space = spaces.Box(low=np.array([MIN_SPEED] + [STEER_MIN] + [0.]*NUM_SENSORS),
                                             high=np.array([MAX_SPEED] + [STEER_MAX] + [RAY_CAST_DISTANCE]*NUM_SENSORS),
                                             dtype=np.float32)
@@ -1020,8 +1025,15 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
     def step(self, action):
         if action is not None:
             self.car.steer(-STEER_ACTION[action[0]])
-            self.car.gas(GAS_ACTION[action[1]])
-            self.car.brake(BRAKE_ACTION[action[2]])
+            if action[1] == "gas":
+                self.car.gas(GAS_ACTION[action[1]])
+                self.car.brake(0)
+            elif action[1] == "brake":
+                self.car.brake(GAS_ACTION[action[1]])
+                self.car.gas(0)
+            else:
+                self.car.gas(0)
+                self.car.brake(0)
 
         self.car.step(1.0 / FPS)
         self.world.Step(1.0 / FPS, 6 * 30, 2 * 30)
@@ -1079,7 +1091,7 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
             if self.slowness > 10:
                 # Slow for too long? shut 'er down
                 self.slowness = 0
-                slow_reward -= 10
+                slow_reward -= 100
                 done = True
             reward_list.append(("slowness", slow_reward))
 
@@ -1443,26 +1455,26 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
 if __name__ == "__main__":
     from pyglet.window import key
 
-    a = np.array([0.0, 0.0, 0.0])
+    a = np.array(["straight", "noop"])
 
 
     def key_press(k, mod):
         global restart
         if k == 0xff0d: restart = True
-        if k == key.LEFT:  a[0] = 1
-        if k == key.RIGHT: a[0] = 2
-        if k == key.UP:    a[1] = 1
-        if k == key.DOWN:  a[2] = 1
+        if k == key.LEFT:  a[0] = "left"
+        if k == key.RIGHT: a[0] = "right"
+        if k == key.UP:    a[1] = "gas"
+        if k == key.DOWN:  a[1] = "brake"
 
 
     def key_release(k, mod):
-        if k == key.LEFT and a[0] == 1: a[0] = 0
-        if k == key.RIGHT and a[0] == 2: a[0] = 0
-        if k == key.UP:    a[1] = 0
-        if k == key.DOWN:  a[2] = 0
+        if k == key.LEFT and a[0] == "left": a[0] = "straight"
+        if k == key.RIGHT and a[0] == "right": a[0] = "straight"
+        if k == key.UP:    a[1] = "noop"
+        if k == key.DOWN:  a[1] = "noop"
 
 
-    env = CarRacingPoS()
+    env = CarRacingPoSContinuousState()
     env.render()
     env.viewer.window.on_key_press = key_press
     env.viewer.window.on_key_release = key_release
@@ -1481,7 +1493,7 @@ if __name__ == "__main__":
             s, r, done, info = env.step(a)
             total_reward += r
             if steps % 200 == 0 or done:
-                print("\naction " + str(["{:+0.2f}".format(x) for x in a]))
+                print("\naction " + str([f"{x} " for x in a]))
                 print("step {} total_reward {:+0.2f}".format(steps, total_reward))
                 # import matplotlib.pyplot as plt
                 # plt.imshow(s)
