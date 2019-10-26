@@ -41,7 +41,7 @@ vizdoom.ini
 /.vscode
 
 #Qlearning Log Data
-/q_learning/rewards
-/q_learning/q_backups
+/5033_RL/q_learning/rewards
+/5033_RL/q_learning/q_backups
 *_q*.txt
 *_q*.gz
