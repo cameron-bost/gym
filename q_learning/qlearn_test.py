@@ -11,7 +11,7 @@ import gym
 from random import choices, getrandbits
 import sys
 
-EXPERIMENT = "double_test"
+EXPERIMENT = "human"
 cur_path = os.path.dirname(__file__)
 q1_file = f'{EXPERIMENT}_q1.gz'
 q1_path = os.path.join(cur_path, q1_file)
@@ -19,10 +19,10 @@ q2_file = f'{EXPERIMENT}_q2.gz'
 q2_path = os.path.join(cur_path, q2_file)
 
 # Flag for indicating when program should terminate
-do_terminate_qlearn = False
+do_terminate = False
 
 # Gym instance
-env = gym.make('CarRacing-v0')
+env = gym.make('CarRacing5033Discrete-v0')
 
 # Environment properties
 observation_space_size = np.prod(env.observation_space.nvec)
@@ -60,6 +60,29 @@ ITER_COMPLETION_CHECKPOINT_INCREMENT = 100
 q1_table = None
 q2_table = None
 
+
+def export_tiles_visited(episode_num, tiles_visited_list):
+    print("Exporting Rewards...")
+    directory = os.path.join(cur_path, f"rewards\\{EXPERIMENT}\\")
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    if tiles_visited_list:
+        tiles_visited_dir = os.path.join(directory, f"tiles_visited\\")
+        if not os.path.exists(tiles_visited_dir):
+            os.makedirs(tiles_visited_dir)
+        fname = f'{EXPERIMENT}_ep{episode_num}_tiles'
+        np.savetxt(tiles_visited_dir + fname + ".gz", tiles_visited_list)
+
+def export_tiles_per_iter(episode_num, tiles_per_iter_list):
+    directory = os.path.join(cur_path, f"rewards\\{EXPERIMENT}\\")
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    tiles_per_iter_dir = os.path.join(directory, f"tiles_per_iter\\")
+    if not os.path.exists(tiles_per_iter_dir):
+        os.makedirs(tiles_per_iter_dir)
+    fname = f'{EXPERIMENT}_ep{episode_num - STATS_SAVE_INTERVAL + 1}_{episode_num}_tiles_per_iter_per_ep'
+    np.savetxt(tiles_per_iter_dir + fname + ".gz", tiles_per_iter_list)
+
 # Exports the current contents of the Q-Table to disk and creates a backup of the previous contents.
 def export_qtable(episode_num, episode_tiles_per_iter_list, tiles_visited_list, double):
     global q1_table, q2_table, cur_path, q1_path, q2_path
@@ -71,7 +94,7 @@ def export_qtable(episode_num, episode_tiles_per_iter_list, tiles_visited_list, 
         if Q_BACKUPS:
             backup_file = f'q_backups\\{EXPERIMENT}_ep{episode_num}_q1.gz'
             backup_path = os.path.join(cur_path, backup_file)
-            if exists(backup_path): 
+            if exists(backup_path):
                 os.remove(backup_path)
             copyfile(q1_path, backup_path)
 
@@ -132,30 +155,30 @@ def init_q_tables(double):
 
 
 def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamma, q_table, alpha):
-    global do_terminate_qlearn
+    global do_terminate
     # Initial state is determined by environment
     current_state = env.reset()
     iteration_ctr = 0
-    
+
     tiles_visited_list = []
     tiles_per_iter = 0
     current_average_reward = 0
-    
+
     # Repeat until max iterations have passed or agent reaches terminal state
-    while not do_terminate_qlearn and iteration_ctr <= max_iterations:
+    while not do_terminate and iteration_ctr <= max_iterations:
 
         # Get current state index
         current_state_index = np.ravel_multi_index(current_state, env.observation_space.nvec)
         selected_action_index = policy(current_state_index, q_table)
         selected_action = np.unravel_index(
             selected_action_index, env.action_space.nvec)
-        
-        
+
+
         # Perform action, update state
-        next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(selected_action)
-        
+        next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
+
         # Set gamma = 0 when terminal state reached to satisfy Q(s', . ) = 0
-        if do_terminate_qlearn:
+        if do_terminate:
             gamma = 0
 
         # Update Q-Table w/ selected learning method
@@ -175,7 +198,7 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
         # After some number of iterations we automatically terminate the episode
         if iteration_ctr > max_iterations:
             # print("Note: Terminating episode due to max iterations exceeded")
-            do_terminate_qlearn = True
+            do_terminate = True
     print(
         f"Episode {episode_num} completed. Tiles per iter: {tiles_per_iter:.4f}, Avg Reward: {current_average_reward:.4f}, Iter: {iteration_ctr}, Tiles:{tiles_visited_list[-1]}")
     return tiles_visited_list, tiles_per_iter
@@ -199,7 +222,7 @@ def double_expected_sarsa(reward, current_state_index, selected_action_index, ne
                     + gamma * expected_val
                     - q1_table[current_state_index, selected_action_index])
         q1_table[current_state_index, selected_action_index] += d_q
-    else: 
+    else:
         expected_val = expected_action_value(q1_table, next_state_index, greedy_policy, exponential_weights)
         d_q = alpha * (reward
                        + gamma * expected_val
@@ -258,7 +281,7 @@ def exponential_weights(current_state_index, policy, q_table):
 
 
 def do_policy_episode(policy, max_iterations, q_table, render):
-    global do_terminate_qlearn
+    global do_terminate
     # Perform a run using the given policy, but don't update q table.
     # Initial state is determined by environment
     current_state = env.reset()
@@ -269,7 +292,7 @@ def do_policy_episode(policy, max_iterations, q_table, render):
     current_average_reward = 0
 
     # Repeat until max iterations have passed or agent reaches terminal state
-    while not do_terminate_qlearn and iteration_ctr <= max_iterations:
+    while not do_terminate and iteration_ctr <= max_iterations:
         # Keep that UI train rolling
         if render:
             env.render()
@@ -280,7 +303,7 @@ def do_policy_episode(policy, max_iterations, q_table, render):
         selected_action = np.unravel_index(selected_action_index, env.action_space.nvec)
 
         # Perform action, update state
-        next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(selected_action)
+        next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
 
         # Update agent state variables
         current_state = next_state
@@ -296,12 +319,12 @@ def do_policy_episode(policy, max_iterations, q_table, render):
         # After some number of iterations we automatically terminate the episode
         if iteration_ctr > max_iterations:
             # print("Note: Terminating episode due to max iterations exceeded")
-            do_terminate_qlearn = True
+            do_terminate = True
     return tiles_visited_list, tiles_per_iter
 
 
-def do_human(max_iterations, actions):
-    global do_terminate_qlearn
+def do_random(max_iterations):
+    global do_terminate
     # Perform a run using the human
     current_state = env.reset()
     iteration_ctr = 0
@@ -311,12 +334,14 @@ def do_human(max_iterations, actions):
     current_average_reward = 0
 
     # Repeat until max iterations have passed or agent reaches terminal state
-    while not do_terminate_qlearn and iteration_ctr <= max_iterations:
+    while not do_terminate and iteration_ctr <= max_iterations:
         # Keep that UI train rolling
-        env.render()
+        # env.render()
+        actions = [random.randint(0, 2), random.randint(0, 1), random.randint(0, 1)]
+        actions = np.array(actions)
 
         # Perform action, update state
-        next_state, reward, do_terminate_qlearn, tile_visited_count = env.step(actions)
+        next_state, reward, do_terminate, tile_visited_count = env.step(actions)
 
         # Update agent state variables
         current_state = next_state
@@ -331,7 +356,42 @@ def do_human(max_iterations, actions):
         # After some number of iterations we automatically terminate the episode
         if iteration_ctr > max_iterations:
             # print("Note: Terminating episode due to max iterations exceeded")
-            do_terminate_qlearn = True
+            do_terminate = True
+    return tiles_visited_list, tiles_per_iter
+
+
+def do_human(max_iterations, actions):
+    global do_terminate
+    # Perform a run using the human
+    current_state = env.reset()
+    iteration_ctr = 0
+
+    tiles_visited_list = []
+    tiles_per_iter = 0
+    current_average_reward = 0
+
+    # Repeat until max iterations have passed or agent reaches terminal state
+    while not do_terminate and iteration_ctr <= max_iterations:
+        # Keep that UI train rolling
+        env.render()
+
+        # Perform action, update state
+        next_state, reward, do_terminate, tile_visited_count = env.step(actions)
+
+        # Update agent state variables
+        current_state = next_state
+        iteration_ctr += 1
+
+        # Update reward trackers, only use tile visited so that the reward function can be evaluated independently
+        tiles_visited_list.append(tile_visited_count)
+        tiles_per_iter = tile_visited_count / iteration_ctr
+        current_average_reward = (
+            current_average_reward*(iteration_ctr-1) + reward)/iteration_ctr
+
+        # After some number of iterations we automatically terminate the episode
+        if iteration_ctr > max_iterations:
+            # print("Note: Terminating episode due to max iterations exceeded")
+            do_terminate = True
     return tiles_visited_list, tiles_per_iter
 
 if __name__ == "__main__":
@@ -352,6 +412,8 @@ if __name__ == "__main__":
                         actions[1] = 1
                     if k == key.DOWN:
                         actions[2] = 1
+                    if k == key.ESCAPE or k == key.SPACE:
+                        sys.exit(0)
 
                 def key_release(k, mod):
                     if k == key.LEFT and actions[0] == 1:
@@ -367,8 +429,23 @@ if __name__ == "__main__":
                 env.viewer.window.on_key_release = key_release
                 while True:
                     tiles_visited_list, tiles_per_iter = do_human(EPISODE_ITERATION_MAX, actions)
-                    do_terminate_qlearn = False
+                    do_terminate = False
                     print(f"Human episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
+            elif sys.argv[1] == 'random':
+                # env.render()
+                RANDOM_EPISODES = 40
+                # episode_tiles_visited_list = []
+                episode_tiles_per_iter_list = []
+                for episode in range(RANDOM_EPISODES):
+                    import random
+                    tiles_visited_list, tiles_per_iter = do_random(EPISODE_ITERATION_MAX)
+                    # episode_tiles_visited_list.append(tiles_visited_list)
+                    episode_tiles_per_iter_list.append(tiles_per_iter)
+                    do_terminate = False
+                    print(
+                        f"Human episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
+                    export_tiles_visited(episode, tiles_visited_list)
+                    export_tiles_per_iter(RANDOM_EPISODES, episode_tiles_per_iter_list)
             else:
                 double = "double" in sys.argv
                 str_add = ""
@@ -396,10 +473,10 @@ if __name__ == "__main__":
                 if "greedy" in sys.argv:
                     while True:
                         if double:
-                            tiles_visited_list, tiles_per_iter = do_policy_episode(double_greedy_policy, EPISODE_ITERATION_MAX, (q1_table, q2_table), render=True)     
+                            tiles_visited_list, tiles_per_iter = do_policy_episode(double_greedy_policy, EPISODE_ITERATION_MAX, (q1_table, q2_table), render=True)
                         else:
                             tiles_visited_list, tiles_per_iter = do_policy_episode(greedy_policy, EPISODE_ITERATION_MAX, q1_table, render=True)
-                        do_terminate_qlearn = False
+                        do_terminate = False
                         print(f"{str_add}Greedy episode complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
                 elif "learn" in sys.argv:
                     for episode in range(START_EPISODE, NUM_EPISODES):
@@ -417,8 +494,8 @@ if __name__ == "__main__":
                             tiles_visited_list, tiles_per_iter = do_qlearn_episode(
                                 episode, exponential_explore_policy, expected_sarsa, iterations, gamma, q1_table, alpha)
                         iters_complete = len(tiles_visited_list)
-                        tiles_visited_list = None # Don't save stats for non-greedy policy runs
-                        do_terminate_qlearn = False
+                        tiles_visited_list = None  # Don't save stats for non-greedy policy runs
+                        do_terminate = False
                         episode_tiles_per_iter_list.append(tiles_per_iter)
 
                         show_user = episode > 0 and VIEW_INTERVAL > 0 and episode % VIEW_INTERVAL == 0
@@ -433,18 +510,18 @@ if __name__ == "__main__":
                                     greedy_policy, iterations, q1_table, render=show_user)
                             if not save_stats:
                                 tiles_visited_list = None
-                            print(f"{str_add}Greedy episode {episode} complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
-                            do_terminate_qlearn = False
+                            # print(f"{str_add}Greedy episode {episode} complete. Iter:{len(tiles_visited_list)}, Tiles per iter: {tiles_per_iter:.4f}, Tiles:{tiles_visited_list[-1]}")
+                            do_terminate = False
 
                         if export_qtable(episode, episode_tiles_per_iter_list, tiles_visited_list, double):
                             episode_tiles_per_iter_list = []
                             tiles_visited_list = None
-                        
+
                         print()
         except KeyboardInterrupt:
             sys.exit(0)
-        
 
-    
-    
+
+
+
 
