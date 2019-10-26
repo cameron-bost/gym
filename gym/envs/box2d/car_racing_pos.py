@@ -1060,15 +1060,14 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
         reward_list = []
 
         if action is not None:  # First step without action, called from reset()
-
             ##REWARDS##
 
             # Negative reward based on time
-            # time_reward = -0.1
-            # reward_list.append(("time", time_reward))
+            time_reward = -0.1
+            reward_list.append(("time", time_reward))
 
             # positive speed reward
-            speed_reward = -0.1 + (speed_state ** 0.5) / 100
+            speed_reward = (speed_state ** 0.5) / 50
             reward_list.append(("speed", speed_reward))
 
             # Increasingly bad reward for not moving
@@ -1101,7 +1100,7 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
             raycast_dist_normalized = 3 - (3 - 1) / (75 - 10) * (sum(raycast_dist_state) - 10) + 1
             angle_diff_normalized = 1 - 1 / 1.2 * angle_diff
             steer_reward = 0.3 * (speed_reward / 2 + .1) * angle_diff_normalized * raycast_dist_normalized
-            # reward_list.append(("steer", steer_reward))
+            reward_list.append(("steer", steer_reward))
 
             # Stop the run if both wheels outside bounds of track
             cnt = 0
@@ -1142,7 +1141,7 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
                     dtd = cur_tile_dist - self.tile_dist
                     if dtd <= 1:  # Filter out "jumps" by only updating when decreasing
                         self.dtile_dist = dtd
-                    tile_dist_score = 0.05 * (abs(self.dtile_dist) ** 0.5)
+                    tile_dist_score = 0.1 * (abs(self.dtile_dist) ** 0.5)
                     reward_list.append(("tile_dist_score", tile_dist_score))
                 self.tile_dist = cur_tile_dist
 
@@ -1150,13 +1149,12 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
                 pass
 
             # Small negative reward based on raycast distance to wall
-            raycast_reward = (-.5 + 0.5 / (75 - 10) * (sum(raycast_dist_state) - 10) / (speed_state / 10 + 1))/20
-            # raycast_reward = sum([-2*speed_reward / raycast_i for raycast_i in raycast_dist_state])
+            raycast_reward = -.5 + 0.5 / (75 - 10) * (sum(raycast_dist_state) - 10) / (speed_state / 10 + 1)
             reward_list.append(("raycast_reward", raycast_reward))
 
             # Reduce score if wheel off track.
             wheel_reward = -1 * (0.2 if 1 in wheel_on_off_states else 0)
-            # reward_list.append(("wheel", wheel_reward))
+            reward_list.append(("wheel", wheel_reward))
 
             step_reward += sum([r for n, r in reward_list])
             # print(*[f"{n}:{r:.2f}" for n, r in reward_list])
@@ -1178,7 +1176,7 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
                 done = True
                 step_reward = -100
         # print(f"State:{self.state}")
-       #  print(f"Rewards:{reward_list}, Total: {step_reward}")
+        # print(f"Rewards:{reward_list}, Total: {step_reward}")
         return self.state, step_reward, done, self.tile_visited_count
 
     def render(self, mode='human'):

@@ -322,8 +322,7 @@ def do_actor_critic_episode(ac_theta_weights, ac_value_weights):
         # Note: Advantage A-C
         # Advantage Function
         # A(s, a) = next_reward + gamma*V(next_state) - V(current_state)
-        dell = reward + gamma*(policy(selected_action, ac_theta_weights, policy_features_dict) - value(ac_value_weights, next_value_vector))
-        # print(f"Advantage:{dell}")
+        dell = reward + gamma * value(ac_value_weights, next_value_vector) - value(ac_value_weights, value_vector)
         ac_value_weights += learning_rate_value_weights * dell * np.array(value_vector)  # TODO check if this should be dell * x
 
         policy_gradient = grad_policy(selected_action, policy_features_dict, ac_theta_weights)
@@ -357,8 +356,8 @@ if __name__ == "__main__":
             # Load weight vectors
             (theta_weights, value_weights) = init_weight_vectors()
             for episode_num in range(MAX_EPISODES):
-                theta_weights, value_weights, tiles_visited = do_actor_critic_episode(theta_weights=theta_weights,
-                                                                                      value_weights=value_weights)
+                theta_weights, value_weights, tiles_visited = do_actor_critic_episode(ac_theta_weights=theta_weights,
+                                                                                      ac_value_weights=value_weights)
                 np.savetxt(FILE_NAME_POLICY_WEIGHTS, theta_weights)
                 np.savetxt(FILE_NAME_VALUE_WEIGHTS, value_weights)
             # End Actor-Critic "else" block
