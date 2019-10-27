@@ -340,7 +340,8 @@ class CarRacing(gym.Env, EzPickle):
         self.t = 0.0
         self.road_poly = []
         self.track_direction = random.choice([-1,1])
-        self.viewer.geoms = []
+        if self.viewer:
+            self.viewer.geoms = []
 
         while True:
             success = self._create_track()
@@ -349,6 +350,7 @@ class CarRacing(gym.Env, EzPickle):
             if self.verbose == 1:
                 print("retry to generate track (normal if there are not many of this messages)")
         self.car = Car(self.world, *self.track[0][1:4], draw_car=True)
+        
 
         return self.step(None)[0]
 
