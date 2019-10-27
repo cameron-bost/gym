@@ -11,8 +11,8 @@ import random
 """
 Learning Parameters
 """
-MAX_EPISODES = 20000
-EPISODE_MAX_ITERATIONS = 2000    # Max number of iterations in one episode
+MAX_EPISODES = 10000
+EPISODE_MAX_ITERATIONS = 1000    # Max number of iterations in one episode
 DEFAULT_GAMMA = 0.99
 
 """
@@ -29,13 +29,15 @@ cur_path = os.path.dirname(__file__)
 FILE_NAME_VALUE_WEIGHTS = os.path.join(cur_path, "value_weights.txt")
 FILE_NAME_POLICY_WEIGHTS = os.path.join(cur_path, "policy_weights.txt")
 DIRECTORY_WEIGHT_BACKUP = os.path.join(cur_path, "weight_backups")
+EXPERIMENT = 'actor-critic'
+SAVE_STATS_INTERVAL = 50
 
 # Gym instance
 env = gym.make('CarRacing5033ContinuousState-v0')
 SHOW_GRAPHICS = False
 
 
-# State constants (copied from gym)
+# State constants (copied from env file)
 RAY_CAST_DISTANCE = 20
 NUM_SENSORS = 5
 RAY_CAST_INTERVALS = 5
@@ -304,6 +306,8 @@ def do_actor_critic_episode(ac_theta_weights, ac_value_weights):
     value_vector = None
     policy_features_dict = None
     tile_visited_count = 0
+    current_average_reward = 0
+    tiles_visited_list = []
     while not do_terminate and iteration < EPISODE_MAX_ITERATIONS:
         if SHOW_GRAPHICS:
             env.render()
@@ -331,11 +335,35 @@ def do_actor_critic_episode(ac_theta_weights, ac_value_weights):
         gamma_accumulator *= gamma
         current_state = next_state
         value_vector = next_value_vector
+
+        # Update reward trackers, only use tile visited so that the reward function can be evaluated independently
+        tiles_visited_list.append(tile_visited_count)
+        tiles_per_iter = tile_visited_count / iteration
+        current_average_reward = (current_average_reward * (iteration - 1) + reward) / iteration
+
         iteration += 1
         # End Actor-Critic iteration
     print(f"Episode {episode_num}: {tile_visited_count} tiles; {iteration} iterations")
-    return ac_theta_weights, ac_value_weights, tile_visited_count
+    return ac_theta_weights, ac_value_weights, tiles_visited_list, tiles_per_iter
     # End Actor-Critic episode
+
+
+def export_rewards(episode_num, tiles_per_iter_list, tiles_visited_list):
+    print("Exporting Rewards...")
+    reward_directory = os.path.join(cur_path, f"rewards\\{EXPERIMENT}\\")
+    if not os.path.exists(reward_directory):
+        os.makedirs(reward_directory)
+    tiles_per_iter_dir = os.path.join(reward_directory, f"tiles_per_iter\\")
+    if not os.path.exists(tiles_per_iter_dir):
+        os.makedirs(tiles_per_iter_dir)
+    fname = f'{EXPERIMENT}_ep{episode_num - SAVE_STATS_INTERVAL + 1}_{episode_num}_tiles_per_iter_per_ep'
+    np.savetxt(tiles_per_iter_dir + fname + ".gz", tiles_per_iter_list)
+    if tiles_visited_list:
+        tiles_visited_dir = os.path.join(reward_directory, f"tiles_visited\\")
+        if not os.path.exists(tiles_visited_dir):
+            os.makedirs(tiles_visited_dir)
+        fname = f'{EXPERIMENT}_ep{episode_num}_tiles'
+        np.savetxt(tiles_visited_dir + fname + ".gz", tiles_visited_list)
 
 
 # Main code
@@ -355,9 +383,14 @@ if __name__ == "__main__":
             gen_action_coefficients()
             # Load weight vectors
             (theta_weights, value_weights) = init_weight_vectors()
-            for episode_num in range(MAX_EPISODES):
-                theta_weights, value_weights, tiles_visited = do_actor_critic_episode(ac_theta_weights=theta_weights,
-                                                                                      ac_value_weights=value_weights)
+            tiles_per_iter_list = []
+            for episode_num in range(START_EPISODE, MAX_EPISODES):
+                theta_weights, value_weights, tiles_visited_list, tile_per_iter = \
+                    do_actor_critic_episode(ac_theta_weights=theta_weights,ac_value_weights=value_weights)
+                tiles_per_iter_list.append(tile_per_iter)
                 np.savetxt(FILE_NAME_POLICY_WEIGHTS, theta_weights)
                 np.savetxt(FILE_NAME_VALUE_WEIGHTS, value_weights)
+                if (episode_num + 1) % SAVE_STATS_INTERVAL == 0:
+                    export_rewards(episode_num, tiles_per_iter_list, tiles_visited_list)
+
             # End Actor-Critic "else" block
