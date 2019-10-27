@@ -359,6 +359,8 @@ class CarRacingPoSBase(gym.Env, EzPickle):
         self.t = 0.0
         self.road_poly = []
         self.track_direction = random.choice([-1, 1])
+        if self.viewer:
+            self.viewer.geoms = []
 
         while True:
             success = self._create_track()
@@ -366,7 +368,7 @@ class CarRacingPoSBase(gym.Env, EzPickle):
                 break
             if self.verbose == 1:
                 print("retry to generate track (normal if there are not many of this messages)")
-        self.car = Car(self.world, *self.track[0][1:4])
+        self.car = Car(self.world, *self.track[0][1:4], draw_car=True)
 
         return self.step(None)[0]
 
@@ -426,14 +428,16 @@ class CarRacingPoSBase(gym.Env, EzPickle):
         gl.glViewport(0, 0, VP_W, VP_H)
         t.enable()
         self.render_road()
+        self.render_raycasts()
+        self.render_wall_segments()
+        self.render_intersections()
         for geom in self.viewer.onetime_geoms:
+            geom.render()
+        for geom in self.viewer.geoms:
             geom.render()
         self.viewer.onetime_geoms = []
         t.disable()
         self.render_indicators(WINDOW_W, WINDOW_H)
-        self.render_raycasts()
-        self.render_wall_segments()
-        self.render_intersections()
 
         if mode == 'human':
             win.flip()
@@ -510,9 +514,18 @@ class CarRacingPoSBase(gym.Env, EzPickle):
 
     def render_raycasts(self):
         if hasattr(self, "raycasts"):
-            for raycast in self.raycasts:
-                path = [(raycast[0][0], raycast[0][1]), (raycast[1][0], raycast[1][1])]
-                self.viewer.draw_line(start=path[0], end=path[1], color=(1, 0.0, 0.0), linewidth=3)
+            intersections = None
+            if hasattr(self, "intersections"):
+                intersections = [raycast_i for point, raycast_i in self.intersections]
+            for raycast_i, raycast in enumerate(self.raycasts):
+                start_point = (raycast[0][0], raycast[0][1])
+                if intersections and raycast_i in intersections:
+                    int_point_i = intersections.index(raycast_i)
+                    end_point = self.intersections[int_point_i][0]
+                else:
+                    end_point = (raycast[1][0], raycast[1][1])
+                self.viewer.draw_line(
+                    start=start_point, end=end_point, color=(1, 0.0, 0.0), linewidth=3)
 
     def render_wall_segments(self):
         if hasattr(self, "wall_segments"):
@@ -521,7 +534,7 @@ class CarRacingPoSBase(gym.Env, EzPickle):
 
     def render_intersections(self):
         if hasattr(self, "intersections"):
-            for point in self.intersections:
+            for point, raycast_i in self.intersections:
                 self.viewer.draw_circle(point, color=(0.0, 1, 0.0), radius=1)
 
     def get_min_distances(self):
@@ -615,19 +628,18 @@ class CarRacingPoSBase(gym.Env, EzPickle):
         # Loop through points, get the intersection of the closest wall
         int_dist = []
         self.intersections = []
-        for raycast in raycasts:
+        for raycast_i, raycast in enumerate(raycasts):
             ray_int_points = []
             for wall in wall_segments:
                 int_point = intersection(raycast, wall)
                 if int_point is not None:
-                    dist = math.sqrt(
-                        (self.car.hull.position.x - int_point[0]) ** 2 + (self.car.hull.position.y - int_point[1]) ** 2)
+                    dist = math.sqrt((self.car.hull.position.x - int_point[0])**2 + (self.car.hull.position.y - int_point[1])**2)
                     ray_int_points.append((dist, [int_point[0], int_point[1]]))
             if ray_int_points:
                 ray_int_points.sort()
                 dist = ray_int_points[0][0]
                 point = ray_int_points[0][1]
-                self.intersections.append(point)
+                self.intersections.append((point, raycast_i))
                 int_dist.append(dist)
             else:
                 int_dist.append(RAY_CAST_DISTANCE - 1)  # Max range

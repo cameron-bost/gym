@@ -140,6 +140,12 @@ class Viewer(object):
         self.add_onetime(geom)
         return geom
 
+    def add_sprite_geom(self, image_path, subpixel=False):
+        #Adds a spritegeom to render list and returns spritegeom it created so that it can be updated
+        sprite_geom = SpriteGeom(image_path, subpixel=subpixel)
+        self.add_geom(sprite_geom)
+        return sprite_geom
+
     def get_array(self):
         self.window.flip()
         image_data = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
@@ -309,6 +315,20 @@ class Line(Geom):
         glVertex2f(*self.end)
         glEnd()
 
+
+class SpriteGeom(Geom, pyglet.sprite.Sprite):
+    def __init__(self, image_path, subpixel=False):
+        # set subpixel=True to remove jittering image
+        Geom.__init__(self)
+        self._image = pyglet.image.load(image_path)
+        self._image.anchor_x = self._image.width // 2
+        self._image.anchor_y = self._image.height // 2
+        pyglet.sprite.Sprite.__init__(self, self._image, subpixel=subpixel)
+        self.flip = False
+    def render1(self):
+        self.draw()
+
+
 class Image(Geom):
     def __init__(self, fname, width, height):
         Geom.__init__(self)
@@ -335,8 +355,8 @@ class SimpleImageViewer(object):
                 scale = self.maxwidth / width
                 width = int(scale * width)
                 height = int(scale * height)
-            self.window = pyglet.window.Window(width=width, height=height,
-                display=self.display, vsync=False, resizable=True)
+            self.window = pyglet.window.Window(width=width, height=height, 
+                display=self.display, vsync=False, resizable=True)            
             self.width = width
             self.height = height
             self.isopen = True
@@ -351,9 +371,9 @@ class SimpleImageViewer(object):
                 self.isopen = False
 
         assert len(arr.shape) == 3, "You passed in an image with the wrong number shape"
-        image = pyglet.image.ImageData(arr.shape[1], arr.shape[0],
+        image = pyglet.image.ImageData(arr.shape[1], arr.shape[0], 
             'RGB', arr.tobytes(), pitch=arr.shape[1]*-3)
-        gl.glTexParameteri(gl.GL_TEXTURE_2D,
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, 
             gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
         texture = image.get_texture()
         texture.width = self.width
