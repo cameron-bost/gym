@@ -646,9 +646,18 @@ class CarRacing(gym.Env, EzPickle):
 
     def render_raycasts(self):
         if hasattr(self, "raycasts"):
-            for raycast in self.raycasts:
-                path = [(raycast[0][0], raycast[0][1]), (raycast[1][0], raycast[1][1])]
-                self.viewer.draw_line(start=path[0], end=path[1], color=(1, 0.0, 0.0), linewidth=3)
+            intersections = None
+            if hasattr(self, "intersections"):
+                intersections = [raycast_i for point, raycast_i in self.intersections]
+            for raycast_i, raycast in enumerate(self.raycasts):
+                start_point = (raycast[0][0], raycast[0][1])
+                if intersections and raycast_i in intersections:
+                    int_point_i = intersections.index(raycast_i)
+                    end_point = self.intersections[int_point_i][0]
+                else:
+                    end_point = (raycast[1][0], raycast[1][1])
+                self.viewer.draw_line(
+                    start=start_point, end=end_point, color=(1, 0.0, 0.0), linewidth=3)
             
     def render_wall_segments(self):
         if hasattr(self, "wall_segments"):
@@ -657,7 +666,7 @@ class CarRacing(gym.Env, EzPickle):
 
     def render_intersections(self):
         if hasattr(self, "intersections"):
-            for point in self.intersections:
+            for point, raycast_i in self.intersections:
                 self.viewer.draw_circle(point, color=(0.0, 1, 0.0), radius = 1)
 
     def get_min_distances(self):
@@ -750,7 +759,7 @@ class CarRacing(gym.Env, EzPickle):
         # Loop through points, get the intersection of the closest wall
         int_dist = []
         self.intersections = []
-        for raycast in raycasts:
+        for raycast_i, raycast in enumerate(raycasts):
             ray_int_points = []
             for wall in wall_segments:
                 int_point = intersection(raycast, wall)
@@ -761,7 +770,7 @@ class CarRacing(gym.Env, EzPickle):
                 ray_int_points.sort()
                 dist = ray_int_points[0][0]
                 point = ray_int_points[0][1]
-                self.intersections.append(point)
+                self.intersections.append((point, raycast_i))
                 int_dist.append(dist)
             else:
                 int_dist.append(RAY_CAST_DISTANCE-1) # Max range
