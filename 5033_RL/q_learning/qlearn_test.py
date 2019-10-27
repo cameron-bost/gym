@@ -3,6 +3,7 @@
 # Author: Cameron Bost
 import calendar
 import time
+import math
 import os
 from os.path import exists
 from shutil import copyfile
@@ -11,7 +12,7 @@ import gym
 from random import choices, getrandbits
 import sys
 
-EXPERIMENT = "human"
+EXPERIMENT = "esarsa_lambda"
 cur_path = os.path.dirname(__file__)
 q1_file = f'{EXPERIMENT}_q1.gz'
 q1_path = os.path.join(cur_path, q1_file)
@@ -51,6 +52,10 @@ EXPLORE_RATE_MAX = 0.5
 EXPLORE_RATE_MIN = 0.1
 EXPLORE_RATE_MIN_EPISODE = 5000
 EXPLORE_DECAY_RATE = 1 - (EXPLORE_RATE_MIN/EXPLORE_RATE_MAX)**(1/EXPLORE_RATE_MIN_EPISODE)
+
+# Eligibility Traces Variables
+LAMBDA = 0.6
+ELIGIBILITY_TRACE_TOLERANCE = 10**-3
 
 #EXPERIMENTAL
 ITER_COMPLETION_CHECKPOINT_PERCENT = 0.5
@@ -154,7 +159,7 @@ def init_q_tables(double):
 # https://towardsdatascience.com/reinforcement-learning-with-openai-d445c2c687d2
 
 
-def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamma, q_table, alpha):
+def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamma, q_table, alpha, do_lambda):
     global do_terminate
     # Initial state is determined by environment
     current_state = env.reset()
@@ -163,6 +168,8 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
     tiles_visited_list = []
     tiles_per_iter = 0
     current_average_reward = 0
+    if do_lambda:
+        eligibility_traces = np.zeros([observation_space_size])
 
     # Repeat until max iterations have passed or agent reaches terminal state
     while not do_terminate and iteration_ctr <= max_iterations:
@@ -177,6 +184,13 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
         # Perform action, update state
         next_state, reward, do_terminate, tile_visited_count = env.step(selected_action)
 
+        # If Eligibility Traces are enabled, update E
+        if do_lambda:
+            eligibility_traces[current_state_index] += 1    # Note: accumulating trace
+            for i in range(observation_space_size):
+                if i != current_state_index:
+                    eligibility_traces[i] *= GAMMA_MAX * LAMBDA
+
         # Set gamma = 0 when terminal state reached to satisfy Q(s', . ) = 0
         if do_terminate:
             gamma = 0
@@ -184,7 +198,7 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
         # Update Q-Table w/ selected learning method
         next_state_index = np.ravel_multi_index(next_state, env.observation_space.nvec)
         learning_method(reward, current_state_index, selected_action_index,
-                        next_state_index, gamma, q_table, alpha)
+                        next_state_index, gamma, q_table, alpha, do_lambda, eligibility_traces)
 
         # Update agent state variables
         current_state = next_state
@@ -203,12 +217,19 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
         f"Episode {episode_num} completed. Tiles per iter: {tiles_per_iter:.4f}, Avg Reward: {current_average_reward:.4f}, Iter: {iteration_ctr}, Tiles:{tiles_visited_list[-1]}")
     return tiles_visited_list, tiles_per_iter
 
-def expected_sarsa(reward, current_state_index, selected_action_index, next_state_index, gamma, q_table, alpha):
+def expected_sarsa(reward, current_state_index, selected_action_index, next_state_index, gamma, q_table, alpha,
+                   do_lambda, eligibility_traces):
     expected_val = expected_action_value(q_table, next_state_index, greedy_policy, exponential_weights)
     d_q = alpha * (reward
                    + gamma * expected_val
                    - q_table[current_state_index, selected_action_index])
-    q_table[current_state_index, selected_action_index] += d_q
+    if do_lambda:
+        for i in range(observation_space_size):
+            if not math.isclose(eligibility_traces[i], 0.0, rel_tol=ELIGIBILITY_TRACE_TOLERANCE):
+                for j in range(action_space_size):
+                    q_table[i][j] += d_q*eligibility_traces[i]
+    else:
+        q_table[current_state_index, selected_action_index] += d_q
 
 
 def double_expected_sarsa(reward, current_state_index, selected_action_index, next_state_index, gamma, q_tables, alpha):
@@ -280,7 +301,7 @@ def exponential_weights(current_state_index, policy, q_table):
     return weights
 
 
-def do_policy_episode(policy, max_iterations, q_table, render):
+def do_policy_episode(policy, max_iterations, q_table, render, do_lambda = False):
     global do_terminate
     # Perform a run using the given policy, but don't update q table.
     # Initial state is determined by environment
@@ -290,6 +311,7 @@ def do_policy_episode(policy, max_iterations, q_table, render):
     tiles_visited_list = []
     tiles_per_iter = 0
     current_average_reward = 0
+
 
     # Repeat until max iterations have passed or agent reaches terminal state
     while not do_terminate and iteration_ctr <= max_iterations:
@@ -448,9 +470,12 @@ if __name__ == "__main__":
                     export_tiles_per_iter(RANDOM_EPISODES, episode_tiles_per_iter_list)
             else:
                 double = "double" in sys.argv
+                do_lambda = "lambda" in sys.argv
                 str_add = ""
                 if double:
                     str_add = "Double "
+                if do_lambda:
+                    str_add += "Lambda "
 
                 print(f"Initializing {str_add}Q-Table...")
                 init_q_tables(double)
@@ -489,10 +514,10 @@ if __name__ == "__main__":
                         print(f"Performing run #{episode}. Iterations:{iterations:.0f}, Alpha:{alpha:.4f}, Gamma:{gamma:.4f}, Epsilon:{exploration_rate:.4f}")
                         if double:
                             tiles_visited_list, tiles_per_iter = do_qlearn_episode(
-                                episode, double_exponential_explore_policy, double_expected_sarsa, iterations, gamma, (q1_table, q2_table), alpha)
+                                episode, double_exponential_explore_policy, double_expected_sarsa, iterations, gamma, (q1_table, q2_table), alpha, do_lambda=do_lambda)
                         else:
                             tiles_visited_list, tiles_per_iter = do_qlearn_episode(
-                                episode, exponential_explore_policy, expected_sarsa, iterations, gamma, q1_table, alpha)
+                                episode, exponential_explore_policy, expected_sarsa, iterations, gamma, q1_table, alpha, do_lambda=do_lambda)
                         iters_complete = len(tiles_visited_list)
                         tiles_visited_list = None  # Don't save stats for non-greedy policy runs
                         do_terminate = False
@@ -504,7 +529,7 @@ if __name__ == "__main__":
                             # show the viewer what we've learned so far
                             if double:
                                 tiles_visited_list, tiles_per_iter = do_policy_episode(
-                                    double_greedy_policy, iterations, (q1_table, q2_table), render=show_user)
+                                    double_greedy_policy, iterations, (q1_table, q2_table), render=show_user, do_lambda=do_lambda)
                             else:
                                 tiles_visited_list, tiles_per_iter = do_policy_episode(
                                     greedy_policy, iterations, q1_table, render=show_user)
