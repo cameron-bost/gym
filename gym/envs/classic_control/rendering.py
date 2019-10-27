@@ -140,6 +140,12 @@ class Viewer(object):
         self.add_onetime(geom)
         return geom
 
+    def add_sprite_geom(self, image_path, subpixel=False):
+        #Adds a spritegeom to render list and returns spritegeom it created so that it can be updated
+        sprite_geom = SpriteGeom(image_path, subpixel=subpixel)
+        self.add_geom(sprite_geom)
+        return sprite_geom
+
     def get_array(self):
         self.window.flip()
         image_data = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
@@ -308,6 +314,20 @@ class Line(Geom):
         glVertex2f(*self.start)
         glVertex2f(*self.end)
         glEnd()
+
+
+class SpriteGeom(Geom, pyglet.sprite.Sprite):
+    def __init__(self, image_path, subpixel=False):
+        # set subpixel=True to remove jittering image
+        Geom.__init__(self)
+        self._image = pyglet.image.load(image_path)
+        self._image.anchor_x = self._image.width // 2
+        self._image.anchor_y = self._image.height // 2
+        pyglet.sprite.Sprite.__init__(self, self._image, subpixel=subpixel)
+        self.flip = False
+    def render1(self):
+        self.draw()
+
 
 class Image(Geom):
     def __init__(self, fname, width, height):
