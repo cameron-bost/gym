@@ -340,6 +340,7 @@ class CarRacing(gym.Env, EzPickle):
         self.t = 0.0
         self.road_poly = []
         self.track_direction = random.choice([-1,1])
+        self.viewer.geoms = []
 
         while True:
             success = self._create_track()
@@ -347,7 +348,7 @@ class CarRacing(gym.Env, EzPickle):
                 break
             if self.verbose == 1:
                 print("retry to generate track (normal if there are not many of this messages)")
-        self.car = Car(self.world, *self.track[0][1:4])
+        self.car = Car(self.world, *self.track[0][1:4], draw_car=True)
 
         return self.step(None)[0]
 
@@ -565,14 +566,16 @@ class CarRacing(gym.Env, EzPickle):
         gl.glViewport(0, 0, VP_W, VP_H)
         t.enable()
         self.render_road()
+        self.render_raycasts()
+        self.render_wall_segments()
+        self.render_intersections()
         for geom in self.viewer.onetime_geoms:
+            geom.render()
+        for geom in self.viewer.geoms:
             geom.render()
         self.viewer.onetime_geoms = []
         t.disable()
         self.render_indicators(WINDOW_W, WINDOW_H)
-        self.render_raycasts()
-        self.render_wall_segments()
-        self.render_intersections()
 
         if mode == 'human':
             win.flip()

@@ -2,6 +2,7 @@ import numpy as np
 import math
 import Box2D
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener, shape)
+import os
 
 # Top-down car dynamics simulation.
 #
@@ -10,7 +11,10 @@ from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revolute
 #
 # Created by Oleg Klimov. Licensed on the same terms as the rest of OpenAI Gym.
 
+
 SIZE = 0.02
+CAR_SPRITE_WIDTH = 200 * SIZE
+CAR_SPRITE_HEIGHT = 250 * SIZE
 ENGINE_POWER            = 100000000*SIZE*SIZE
 WHEEL_MOMENT_OF_INERTIA = 4000*SIZE*SIZE
 FRICTION_LIMIT          = 1000000*SIZE*SIZE     # friction ~= mass ~= size^2 (calculated implicitly using density)
@@ -42,12 +46,12 @@ HULL_POLY4 =[
     (-50,-120), (+50,-120),
     (+50,-90),  (-50,-90)
     ]
-WHEEL_COLOR = (0.0,0.0,0.0)
+WHEEL_COLOR = (0.15,0.05,0.5)
 WHEEL_WHITE = (0.3,0.3,0.3)
 MUD_COLOR   = (0.4,0.4,0.0)
 
 class Car:
-    def __init__(self, world, init_angle, init_x, init_y):
+    def __init__(self, world, init_angle, init_x, init_y, draw_car=False):
         self.world = world
         self.hull = self.world.CreateDynamicBody(
             position = (init_x, init_y),
@@ -103,8 +107,25 @@ class Car:
             w.tiles = set()
             w.userData = w
             self.wheels.append(w)
-        self.drawlist =  self.wheels + [self.hull]
+        if not draw_car:
+            # Only draw ugly hull when not drawing beautiful car
+            self.drawlist = self.wheels + [self.hull]
+        else:
+            self.drawlist = self.wheels
         self.particles = []
+        self.draw_car = draw_car
+        # self.file_name = "square.png"
+        self.file_name = "Prince_Of_Speed.png"
+        self.img_path = self.get_image_path(self.file_name)
+        self.sprite_geom = None
+        self.car_scale_x = None
+        self.car_scale_y = None
+    
+    def get_image_path(self, file_name):
+        cur_path = os.path.dirname(__file__)
+        img_path = os.path.join(cur_path, file_name)
+        return img_path
+
 
     def gas(self, gas):
         'control: rear wheel drive'
@@ -201,6 +222,7 @@ class Car:
         if draw_particles:
             for p in self.particles:
                 viewer.draw_polyline(p.poly, color=p.color, linewidth=5)
+        # Old car draw code:
         for obj in self.drawlist:
             for f in obj.fixtures:
                 trans = f.body.transform
@@ -221,6 +243,20 @@ class Car:
                     (+WHEEL_W*SIZE, +WHEEL_R*c2*SIZE), (-WHEEL_W*SIZE, +WHEEL_R*c2*SIZE)
                     ]
                 viewer.draw_polygon([trans*v for v in white_poly], color=WHEEL_WHITE)
+        
+        # Draw the Prince of Speed (aw yeah)
+        if self.draw_car:
+            if self.sprite_geom is None:
+                self.sprite_geom = viewer.add_sprite_geom(self.img_path, subpixel=True) # set subpixel=True to remove jittering image
+                self.car_scale_x = CAR_SPRITE_WIDTH / self.sprite_geom.image.height
+                self.car_scale_y = CAR_SPRITE_HEIGHT / self.sprite_geom.image.width
+            x = self.hull.position.x
+            y = self.hull.position.y
+            rotation = self.hull.angle + math.pi/2  # correction
+            rotation = 2 * math.pi - rotation # make rotation clockwise
+            rotation = rotation * 180 / math.pi # make rotation degrees
+            self.sprite_geom.update(x=x, y=y, scale_x=self.car_scale_x, scale_y=self.car_scale_y, rotation=rotation)
+
 
     def _create_particle(self, point1, point2, grass):
         class Particle:
