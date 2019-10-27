@@ -11,7 +11,7 @@ import gym
 from random import choices, getrandbits
 import sys
 
-EXPERIMENT = "human"
+EXPERIMENT = "single_e-sarsa"
 cur_path = os.path.dirname(__file__)
 q1_file = f'{EXPERIMENT}_q1.gz'
 q1_path = os.path.join(cur_path, q1_file)

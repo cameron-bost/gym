@@ -131,14 +131,14 @@ register(
 
 register(
     id='CarRacing5033Discrete-v0',
-    entry_point='gym.envs.box2d:CarRacingPoS',
+    entry_point='gym.envs.box2d:CarRacingPoSDiscrete',
     max_episode_steps=999999,
     reward_threshold=900,
 )
 
 register(
     id='CarRacing5033ContinuousState-v0',
-    entry_point='gym.envs.box2d:CarRacingPoSContinuousState',
+    entry_point='gym.envs.box2d:CarRacingPoSContinuous',
     max_episode_steps=999999,
     reward_threshold=900,
 )
