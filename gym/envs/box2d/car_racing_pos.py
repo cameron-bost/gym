@@ -1147,6 +1147,8 @@ class CarRacingPoSContinuousState(gym.Env, EzPickle):
 
             except StopIteration:
                 pass
+            except IndexError:
+                pass
 
             # Small negative reward based on raycast distance to wall
             raycast_reward = -.5 + 0.5 / (75 - 10) * (sum(raycast_dist_state) - 10) / (speed_state / 10 + 1)
