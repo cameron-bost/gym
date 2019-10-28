@@ -11,8 +11,9 @@ import numpy as np
 import gym
 from random import choices, getrandbits
 import sys
+import heapq
 
-EXPERIMENT = "human"
+EXPERIMENT = "esarsa-lambda"
 cur_path = os.path.dirname(__file__)
 q1_file = f'{EXPERIMENT}_q1.gz'
 q1_path = os.path.join(cur_path, q1_file)
@@ -55,7 +56,7 @@ EXPLORE_DECAY_RATE = 1 - (EXPLORE_RATE_MIN/EXPLORE_RATE_MAX)**(1/EXPLORE_RATE_MI
 
 # Eligibility Traces Variables
 LAMBDA = 0.6
-ELIGIBILITY_TRACE_TOLERANCE = 10**-3
+ELIGIBILITY_TRACE_TOLERANCE = 10**-7
 
 #EXPERIMENTAL
 ITER_COMPLETION_CHECKPOINT_PERCENT = 0.5
@@ -169,7 +170,7 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
     tiles_per_iter = 0
     current_average_reward = 0
     if do_lambda:
-        eligibility_traces = np.zeros([observation_space_size])
+        eligibility_traces = list()
 
     # Repeat until max iterations have passed or agent reaches terminal state
     while not do_terminate and iteration_ctr <= max_iterations:
@@ -186,10 +187,22 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
 
         # If Eligibility Traces are enabled, update E
         if do_lambda:
-            eligibility_traces[current_state_index] += 1    # Note: accumulating trace
-            for i in range(observation_space_size):
-                if i != current_state_index:
-                    eligibility_traces[i] *= GAMMA_MAX * LAMBDA
+            # Check for duplicate
+            for idx, (s, a, e_val) in enumerate(eligibility_traces):
+                if (s, a) == (current_state_index, selected_action_index):
+                    eligibility_traces.pop(idx)
+                    break
+            # Update trace values
+            for idx, (s, a, e_val) in enumerate(eligibility_traces):
+                eligibility_traces[idx] = (s, a, e_val * GAMMA_MAX * LAMBDA)
+
+            # Check if last element is too small. If so, remove it
+            if len(eligibility_traces) > 0:
+                (last_s, last_a, last_e_val) = eligibility_traces[-1]
+                if last_e_val < ELIGIBILITY_TRACE_TOLERANCE:
+                    eligibility_traces.pop(-1)
+            # Finally, insert new trace value
+            eligibility_traces.insert(0, (current_state_index, selected_action_index, 1))  # Note: replacing trace
 
         # Set gamma = 0 when terminal state reached to satisfy Q(s', . ) = 0
         if do_terminate:
@@ -199,6 +212,8 @@ def do_qlearn_episode(episode_num, policy, learning_method, max_iterations, gamm
         next_state_index = np.ravel_multi_index(next_state, env.observation_space.nvec)
         learning_method(reward, current_state_index, selected_action_index,
                         next_state_index, gamma, q_table, alpha, do_lambda, eligibility_traces)
+
+        # print(f"E-Traces: {eligibility_traces}")
 
         # Update agent state variables
         current_state = next_state
@@ -224,10 +239,8 @@ def expected_sarsa(reward, current_state_index, selected_action_index, next_stat
                    + gamma * expected_val
                    - q_table[current_state_index, selected_action_index])
     if do_lambda:
-        for i in range(observation_space_size):
-            if not math.isclose(eligibility_traces[i], 0.0, rel_tol=ELIGIBILITY_TRACE_TOLERANCE):
-                for j in range(action_space_size):
-                    q_table[i][j] += d_q*eligibility_traces[i]
+        for (s, a, e_val) in eligibility_traces:
+            q_table[s][a] += d_q*e_val
     else:
         q_table[current_state_index, selected_action_index] += d_q
 
