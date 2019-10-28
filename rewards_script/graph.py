@@ -3,8 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
 
-EXPERIMENT = "hyperparametersA"
-EXPERIMENT_TITLE = "Double Expected Sarsa"
+EXPERIMENT1 = "double_sarsa"
+EXPERIMENT2 = "single_sarsa"
+EXPERIMENT_TITLE = "Single Expected Sarsa vs Double Expected Sarsa"
 
 def get_list_of_rewards_files(rewards_directory, experiment_name, metric_name):
     cur_path = os.path.dirname(rewards_directory)
@@ -49,15 +50,12 @@ def get_data(rewards_directory, experiment_name, metric_name):
             group.append((range(len(y)), y))
         return group
 
-
-def graph_data(rewards_directory, experiment_name, metric_name, filter_fn=lambda x: True):
+def graph_data(rewards_directory, experiment_name, metric_name, start_color, end_color, filter_fn=lambda x: True):
     data = get_data(rewards_directory, experiment_name, metric_name)
     
     fig = plt.figure(0)
     fig.canvas.set_window_title('CS 4033/5033 - Cameron Bost, Bryce Hennen')
     num_datasets = len(data)
-    start_color = np.array((255, 204, 0))/255.0
-    end_color = np.array((128, 0, 0))/255.0
     color_incr = (end_color - start_color)/len(data)
     npcolor = start_color
     for episode, dataset in enumerate(data):
@@ -84,7 +82,7 @@ def graph_data(rewards_directory, experiment_name, metric_name, filter_fn=lambda
             # Lowess Smoothing Regression
             frac = 1.0/10
             fitted_vals = sm.nonparametric.lowess(y, x, frac = frac, return_sorted=False)
-            plt.plot(x, fitted_vals, "r", label=f"Lowess Regression, frac = {frac}")
+            plt.plot(x, fitted_vals, color=end_color, label=f"{experiment_name} - Lowess Regression")
             plt.legend()
             
             # # Rolling Average 
@@ -115,6 +113,8 @@ def graph_data(rewards_directory, experiment_name, metric_name, filter_fn=lambda
     elif metric_name == "tiles_visited":
         plt.xlabel('Completed Iterations')
         plt.ylabel('Tiles')
+    
+def graph_finish():
     plt.title(EXPERIMENT_TITLE)
     plt.show()
 
@@ -122,6 +122,17 @@ def graph_data(rewards_directory, experiment_name, metric_name, filter_fn=lambda
 
 if __name__ == "__main__":
     cur_dir = os.path.dirname(__file__)
-    rewards_directory = os.path.join(cur_dir, f"..\\rewards\\")
-    graph_data(rewards_directory, EXPERIMENT, "tiles_per_iter", filter_fn=lambda x: x < 0.5)
-    graph_data(rewards_directory, EXPERIMENT, "tiles_visited")
+    rewards_directory = os.path.join(cur_dir, f"qlearn_results\\")
+    # graph_data(rewards_directory, EXPERIMENT1, "tiles_per_iter", filter_fn=lambda x: x < 0.5)
+    # graph_data(rewards_directory, EXPERIMENT2, "tiles_visited")
+
+    start_color1 = np.array((255, 100, 0, 50)) / 255.0
+    end_color1 = np.array((255, 0, 0, 255)) / 255.0 
+    #End color is the loess regression line color for tiles_per_iter, otherwise it is the last episodes tiles_visited line color
+
+    start_color2 = np.array((0, 150, 200, 50)) / 255.0
+    end_color2 = np.array((0, 0, 255, 255)) / 255.0
+
+    graph_data(rewards_directory, EXPERIMENT1, "tiles_per_iter", start_color1, end_color1, filter_fn=lambda x: x < 0.5)
+    graph_data(rewards_directory, EXPERIMENT2, "tiles_per_iter", start_color2, end_color2, filter_fn=lambda x: x < 0.5)
+    graph_finish()
